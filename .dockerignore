@@ -1,0 +1,9 @@
+**/node_modules
+client/dist
+data
+.env
+.git
+docs/IMPORT_REPORT.md
+*.xlsx
+*.xls
+*.sqlite
