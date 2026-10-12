@@ -1,0 +1,20 @@
+{
+  "name": "zhkh-atyrau",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Цифровая информационная система ЖКХ города Атырау",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "setup": "npm --prefix server ci && npm --prefix client ci",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "test": "npm --prefix server test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client exec tsc -b",
+    "create-admin": "npm --prefix server run create-admin --",
+    "import-initial": "npm --prefix server run import-initial --",
+    "backup": "npm --prefix server run backup",
+    "report": "npm --prefix server run report --"
+  }
+}
