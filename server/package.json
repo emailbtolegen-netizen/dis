@@ -14,6 +14,7 @@
     "import-initial": "node scripts/import-initial.ts",
     "backup": "node scripts/backup.ts",
     "report": "node scripts/report.ts",
+    "relink": "node scripts/relink.ts",
     "test": "node --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {

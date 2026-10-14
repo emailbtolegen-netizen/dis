@@ -24,6 +24,7 @@ export const ISSUE_TYPES: Record<string, string> = {
   suspicious_value: 'Подозрительные значения',
   address_format: 'Формат адреса',
   unlinked: 'Нет связи со связанным реестром',
+  cross_check: 'Расхождения между файлами',
   value_variants: 'Разные написания одного значения',
   control_total: 'Расхождение с итогами исходного файла',
   file_issue: 'Замечания к структуре исходного файла',
@@ -119,6 +120,39 @@ export function computeQuality(allowed: string[]) {
     if (list.length < 2) continue;
     for (const o of list) {
       push(o, 'code_conflict', 'warning', `Номер ${o.code} указан у ${list.length} записей: ${list.map((x) => `${x.uid} (${x.name}; ${x.address_raw ?? 'место не указано'})`).join('; ')}`, 'code');
+    }
+  }
+
+  // лифты: привязка к МЖД, несколько записей по дому, сверка количества с реестром МЖД
+  if (allowed.includes('mkd_lifts')) {
+    const liftLinks = all(`SELECT l.from_id, l.to_id, o.attrs mkd_attrs, o.uid mkd_uid, o.name mkd_name FROM object_links l JOIN objects o ON o.id = l.to_id
+                            WHERE l.relation = 'lift_building' AND l.status != 'rejected' AND o.deleted_at IS NULL`);
+    const byLift = new Map<number, any[]>();
+    const byHouse = new Map<number, number[]>();
+    for (const l of liftLinks) {
+      byLift.set(l.from_id, [...(byLift.get(l.from_id) ?? []), l]);
+      byHouse.set(l.to_id, [...(byHouse.get(l.to_id) ?? []), l.from_id]);
+    }
+    const liftObjs = objs.filter((o) => o.category === 'mkd_lifts');
+    const uidById = new Map(liftObjs.map((o) => [o.id, o.uid]));
+    for (const o of liftObjs) {
+      const ls = byLift.get(o.id) ?? [];
+      if (!ls.length) {
+        push(o, 'unlinked', 'warning', o._attrs.multi_address
+          ? 'В строке указано несколько домов — привяжите запись к нужным карточкам МЖД вручную (вкладка «Связи»)'
+          : 'Дом с таким адресом не найден в реестре МЖД — требуется проверка адреса и ручная привязка (новая карточка МЖД автоматически не создаётся)', 'address_raw');
+        continue;
+      }
+      for (const l of ls) {
+        const others = (byHouse.get(l.to_id) ?? []).filter((id) => id !== o.id);
+        if (others.length) push(o, 'duplicate', 'info', `К дому ${l.mkd_name} (${l.mkd_uid}) привязано несколько записей о лифтах: ${[o.id, ...others].map((id) => uidById.get(id)).join(', ')} — сведения могут относиться к разным датам`);
+        const mkdLifts = json<Record<string, unknown>>(l.mkd_attrs, {}).elevators;
+        const total = o._attrs.lifts_total;
+        if (ls.length === 1 && !others.length && typeof total === 'number') {
+          if (typeof mkdLifts === 'number' && mkdLifts !== total) push(o, 'cross_check', 'info', `В реестре МЖД (${l.mkd_uid}) указано лифтов: ${mkdLifts}, в файле лифтов: ${total}`, 'lifts_total');
+          if (typeof mkdLifts === 'string' && /жо[кқ]/i.test(mkdLifts) && total > 0) push(o, 'cross_check', 'info', `В реестре МЖД (${l.mkd_uid}) указано «${mkdLifts}» (лифтов нет), в файле лифтов: ${total}`, 'lifts_total');
+        }
+      }
     }
   }
 

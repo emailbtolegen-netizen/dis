@@ -91,6 +91,21 @@ export default function Dashboard() {
                   </Col>
                 </>
               )}
+              {d.lifts && (
+                <Col xs={24} xl={12}>
+                  <Card size="small" title="Лифты МЖД" extra={<a onClick={() => nav('/c/mkd_lifts')}>Реестр лифтов →</a>}>
+                    <Row gutter={[8, 8]}>
+                      <Col span={12}><Kpi label="Лифтов по файлу" value={fmtNum(d.lifts.total)} hint={`${d.lifts.records} строк; есть повторы одного дома`} onClick={() => nav('/c/mkd_lifts')} /></Col>
+                      <Col span={12}><Kpi label="Не работают" value={fmtNum(d.lifts.broken ?? 0)} hint={`в ${d.lifts.withBroken} записях`} onClick={() => f('mkd_lifts', { lifts_broken: { min: 1 } })} /></Col>
+                      <Col span={12}><Kpi label="Привязано к МЖД" value={`${d.lifts.linked} из ${d.lifts.records}`} hint={`${d.lifts.houses} домов`} /></Col>
+                      <Col span={12}><Kpi label="Требуют внимания" value={fmtNum(d.lifts.attention.reduce((s: number, a: any) => s + a.n, 0))} hint="кап. ремонт, модернизация, срок эксплуатации" onClick={() => f('mkd_lifts', { attention: { empty: false } })} /></Col>
+                    </Row>
+                    <div style={{ marginTop: 8 }}>
+                      <BarChartBox horizontal data={d.lifts.byStatus} x="s" y="n" valueLabel="Записей" onClick={(r) => f('mkd_lifts', { status: [r.s] })} />
+                    </div>
+                  </Card>
+                </Col>
+              )}
               {d.thermo && (
                 <Col xs={24} xl={12}>
                   <Card size="small" title="Термомодернизация: выделенные средства по годам, ₸">

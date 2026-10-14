@@ -21,6 +21,8 @@ createRoot(document.getElementById('root')!).render(
         token: {
           colorPrimary: '#1f4e79',
           colorInfo: '#1f4e79',
+          colorInfoBg: '#eef4fb',
+          colorInfoBorder: '#c3d6ec',
           colorText: '#1f2933',
           colorTextSecondary: '#52606d',
           colorBgLayout: '#f2f4f7',

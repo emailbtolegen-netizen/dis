@@ -30,7 +30,8 @@ function rangeLabel(v: any): string {
   if (v.min != null && v.max != null) return `${v.min}–${v.max}`;
   if (v.min != null) return `от ${v.min}`;
   if (v.max != null) return `до ${v.max}`;
-  if (v.empty) return 'не заполнено';
+  if (v.empty === true) return 'не заполнено';
+  if (v.empty === false) return 'заполнено';
   return JSON.stringify(v);
 }
 
@@ -101,6 +102,8 @@ export default function Registry() {
     const v = f.core ? row[f.key] : row.attrs?.[f.key];
     if (f.key === 'status') return <StatusTag status={v} />;
     if (f.key === 'name') return <ObjectLink uid={row.uid} name={row.name} />;
+    // если колонка наименования скрыта — ссылка на карточку из адреса
+    if (f.key === 'address_raw' && !visible.includes('name') && allFields.some((x) => x.key === 'name')) return <ObjectLink uid={row.uid} name={v ?? row.name} />;
     return <FieldValue def={f} value={v} hidden={row.hidden_fields?.includes(f.key)} />;
   };
 

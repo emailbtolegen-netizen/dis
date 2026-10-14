@@ -147,6 +147,35 @@ export default function ObjectCard() {
         </>
       ),
     },
+    ...(cat.code === 'mkd' ? [{
+      key: 'lifts', label: `Лифты (${data.lifts.length})`,
+      children: data.lifts.length ? (
+        <>
+          <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            message={`Сведения о лифтах дома из файла «Лифты города Атырау 2022»: записей — ${data.lifts.length}. Исходные формулировки сохранены; привязка к дому выполнена по адресу.`}
+            description={data.lifts.length > 1 ? 'По дому несколько записей (разные строки файла, возможно — разные даты сведений). Записи не объединялись.' : undefined} />
+          <Table size="small" rowKey="uid" dataSource={data.lifts} pagination={false} scroll={{ x: 1200 }}
+            columns={[
+              { title: 'Запись', width: 170, render: (_, l: any) => <span><ObjectLink uid={l.uid} name={l.uid} /><div className="muted" style={{ fontSize: 12 }}>строка {l.source_row}</div></span> },
+              { title: 'Состояние', width: 170, render: (_, l: any) => <StatusTag status={l.status} /> },
+              { title: 'Состояние лифтов (как в файле)', render: (_, l: any) => l.attrs.condition_raw ?? <span className="muted">не указано</span> },
+              { title: 'Всего', width: 70, align: 'right' as const, render: (_, l: any) => l.attrs.lifts_total ?? '—' },
+              { title: 'Пасс.', width: 70, align: 'right' as const, render: (_, l: any) => l.attrs.lifts_passenger ?? '—' },
+              { title: 'Груз.-пасс.', width: 90, align: 'right' as const, render: (_, l: any) => l.attrs.lifts_freight ?? '—' },
+              { title: 'Не работают', width: 100, align: 'right' as const, render: (_, l: any) => (l.attrs.lifts_broken ? <Tag color="red">{l.attrs.lifts_broken}</Tag> : '—') },
+              { title: 'Требует внимания', width: 200, render: (_, l: any) => (l.attrs.attention ? String(l.attrs.attention).split('; ').map((a: string) => <Tag key={a} color="orange" style={{ whiteSpace: 'normal', marginBottom: 2 }}>{a}</Tag>) : '—') },
+              { title: 'Примечание', width: 160, render: (_, l: any) => l.attrs.note ?? '—' },
+              { title: 'Обслуживает', width: 170, render: (_, l: any) => l.attrs.service_company ?? '—' },
+              { title: 'Привязка', width: 150, render: (_, l: any) => (
+                <Tooltip title={l.link.note}>
+                  <Tag color={l.link.status === 'confirmed' ? 'green' : 'gold'}>{l.link.status === 'confirmed' ? 'подтверждена' : 'предложена'}</Tag>
+                  {can('links.manage') && l.link.status !== 'confirmed' && <Button size="small" icon={<CheckOutlined />} onClick={() => reviewLink(l.link.id, 'confirmed')} />}
+                </Tooltip>
+              ) },
+            ]} />
+        </>
+      ) : <Empty description="В файле лифтов сведений по этому дому нет (или запись не сопоставлена — см. «Качество данных» → «Нет связи со связанным реестром»)" />,
+    }] : []),
     {
       key: 'links', label: `Связи (${data.links.length})`,
       children: (

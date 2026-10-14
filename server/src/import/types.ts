@@ -29,7 +29,9 @@ export interface ControlTotal {
   label: string;
   category: string | null;
   filter?: Record<string, string>;
-  measure: 'count' | 'length_km' | 'area_m2';
+  measure: 'count' | 'length_km' | 'area_m2' | 'sum';
+  /** Для measure = 'sum': суммируемое поле attrs. */
+  field?: string;
   stated: number | null;
   statedRaw: string;
   computed: number | null;

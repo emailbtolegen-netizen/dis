@@ -115,8 +115,15 @@ objectsRouter.get('/objects/:uid', (req, res) => {
   const sameAddress = row.address_id
     ? all(`SELECT uid, name, category FROM objects WHERE address_id = ? AND id != ? AND deleted_at IS NULL AND category IN (${allowedFor(req).map(() => '?').join(',')}) LIMIT 50`, row.address_id, row.id, ...allowedFor(req))
     : [];
+  // для дома МЖД — сведения о лифтах (из привязанных записей «Лифты МЖД»)
+  const lifts = row.category === 'mkd' && allowedFor(req).includes('mkd_lifts')
+    ? all(`SELECT o.*, l.id link_id, l.status link_status, l.confidence link_confidence, l.note link_note FROM object_links l JOIN objects o ON o.id = l.from_id
+            WHERE l.to_id = ? AND l.relation = 'lift_building' AND l.status != 'rejected' AND o.deleted_at IS NULL ORDER BY o.source_row`, row.id)
+        .map((o) => ({ ...presentObject(o, conf), link: { id: o.link_id, status: o.link_status, confidence: o.link_confidence, note: o.link_note } }))
+    : [];
   res.json({
     object: presentObject(row, conf, cat),
+    lifts,
     category: cat,
     address,
     area,

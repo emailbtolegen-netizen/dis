@@ -47,6 +47,12 @@ export function ObjectLink({ uid, name }: { uid: string; name?: string | null })
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  'Лифты работают': 'green',
+  'Часть лифтов не работает': 'orange',
+  'Есть неработающие лифты (по описанию)': 'orange',
+  'Все лифты не работают': 'red',
+  'Лифт отсутствует (демонтирован)': 'red',
+  'Состояние не указано': 'default',
   'В работе': 'green',
   'Недействующий': 'default',
   'Работы завершены': 'green',

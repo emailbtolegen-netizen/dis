@@ -80,6 +80,19 @@ export function dashboard(allowed: string[]) {
                              sum(json_type(attrs, '$.elevators') = 'integer') houses FROM objects WHERE deleted_at IS NULL AND category = 'mkd'`),
     };
   }
+  if (allowed.includes('mkd_lifts') && count('mkd_lifts')) {
+    const where = `deleted_at IS NULL AND category = 'mkd_lifts'`;
+    const agg = get(`SELECT count(*) n, sum(json_extract(attrs, '$.lifts_total')) total, sum(json_extract(attrs, '$.lifts_broken')) broken,
+                            sum(coalesce(json_extract(attrs, '$.lifts_broken'), 0) > 0) with_broken FROM objects WHERE ${where}`)!;
+    const linked = get(`SELECT count(DISTINCT from_id) n, count(DISTINCT to_id) houses FROM object_links WHERE relation = 'lift_building' AND status != 'rejected'
+                         AND from_id IN (SELECT id FROM objects WHERE ${where})`)!;
+    res.lifts = {
+      records: agg.n, total: agg.total, broken: agg.broken, withBroken: agg.with_broken,
+      linked: linked.n, houses: linked.houses,
+      byStatus: all(`SELECT coalesce(status, 'Не указано') s, count(*) n FROM objects WHERE ${where} GROUP BY s ORDER BY n DESC`),
+      attention: all(`SELECT json_extract(attrs, '$.attention') a, count(*) n FROM objects WHERE ${where} AND json_extract(attrs, '$.attention') IS NOT NULL GROUP BY a ORDER BY n DESC`),
+    };
+  }
   if (allowed.includes('thermo') && count('thermo')) {
     res.thermo = {
       count: count('thermo'),

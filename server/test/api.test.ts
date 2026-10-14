@@ -18,6 +18,7 @@ const FILES = {
   energy: path.join(SRC, 'Список энергообъектов за 2026  ЖКХ (2).xlsx'),
   thermo: path.join(SRC, 'Таблица КСК 2020-2024 г!!!!!.xlsx'),
 };
+const LIFTS = path.join(SRC, 'Лифты города Атырау 2022-1.xlsx');
 const haveFiles = Object.values(FILES).every((f) => fs.existsSync(f));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zhkh-test-'));
 process.env.DATA_DIR = tmp;
@@ -220,4 +221,42 @@ test('публичная версия по умолчанию выключена
   const list = (await pub.get('/public/objects?category=thermo')).body;
   assert.ok(list.items.every((i: any) => !('contact' in i)));
   assert.equal((await pub.get('/public/objects?category=mkd')).status, 404);
+});
+
+test('лифты МЖД: полный перенос, сверка итогов, привязка к домам без создания дубликатов', { skip: !haveFiles || !fs.existsSync(LIFTS) }, async () => {
+  const mkdBefore = db.scalar<number>(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`);
+  const fd = new FormData();
+  fd.append('file', new Blob([new Uint8Array(fs.readFileSync(LIFTS))]), 'lifts.xlsx');
+  const up = await admin.req('POST', '/admin/imports/upload', fd);
+  assert.equal(up.body.sheets[0].detected.code, 'lifts');
+  const pv = await admin.post('/admin/imports/preview', { sourceFileId: up.body.sourceFile.id, sheet: up.body.sheets[0].name, profile: 'lifts' });
+  const imp = (await admin.get(`/admin/imports/${pv.body.id}`)).body;
+  // 214 строк с домами + строка «Всего» (контрольные итоги, не объект)
+  assert.equal(imp.summary.new, 214);
+  assert.equal(imp.summary.invalid, 0);
+  assert.ok(imp.control_totals.length === 6 && imp.control_totals.every((t: any) => t.match), 'итоги «Всего» совпадают с суммой строк');
+  await admin.post(`/admin/imports/${pv.body.id}/apply`);
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd_lifts' AND deleted_at IS NULL`), 214);
+  assert.equal(db.scalar(`SELECT sum(json_extract(attrs, '$.lifts_total')) FROM objects WHERE category = 'mkd_lifts'`), 712);
+  // новые дома МЖД не созданы
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), mkdBefore);
+  const linked = db.scalar<number>(`SELECT count(DISTINCT from_id) FROM object_links WHERE relation = 'lift_building'`);
+  assert.ok(linked >= 170, `привязано ${linked}`);
+  // строки с несколькими домами не привязываются автоматически
+  assert.equal(db.scalar(`SELECT count(*) FROM object_links l JOIN objects o ON o.id = l.from_id WHERE l.relation = 'lift_building' AND json_extract(o.attrs, '$.multi_address') = 'да'`), 0);
+  // карточка МЖД показывает лифты дома; исходный текст сохранён
+  const house = db.get(`SELECT m.uid FROM object_links l JOIN objects m ON m.id = l.to_id JOIN objects o ON o.id = l.from_id WHERE l.relation = 'lift_building' AND o.address_raw = 'ул.Молдагалиева, дом 5'`)!;
+  const card = (await admin.get(`/objects/${house.uid}`)).body;
+  assert.ok(card.lifts.length >= 2, 'по дому две строки файла (2022 и 2024) — не объединены');
+  const old = card.lifts.find((l: any) => l.attrs.note === 'требуется кап.ремонт');
+  assert.equal(old.status, 'Все лифты не работают');
+  assert.equal(old.attrs.attention, 'Требуется кап. ремонт');
+  assert.equal(old.attrs.condition_raw, 'пассажирский лифт не работает, закрыт');
+  // фильтр по состоянию и поиск по адресу
+  const broken = (await admin.get('/objects?category=mkd_lifts&f=' + encodeURIComponent(JSON.stringify({ status: ['Все лифты не работают'] })))).body;
+  assert.ok(broken.total > 0 && broken.items.every((i: any) => i.status === 'Все лифты не работают'));
+  assert.ok((await admin.get('/objects?category=mkd_lifts&q=' + encodeURIComponent('Алмагуль 17'))).body.total >= 1);
+  // несвязанные записи выделены для проверки
+  const q = (await admin.get('/quality?type=unlinked&category=mkd_lifts&pageSize=500')).body;
+  assert.equal(q.issues.total, 214 - linked);
 });

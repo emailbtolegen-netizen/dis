@@ -1,5 +1,6 @@
 import { all, get, json, run, tx } from '../db/db.ts';
 import type { Row } from '../db/db.ts';
+import { buildingMatchKeys, looseBuildingKey } from '../domain/addressMatch.ts';
 import { findRpRefs, parseAddress } from '../domain/normalize.ts';
 
 /** Типы связей между объектами. */
@@ -10,6 +11,7 @@ export const RELATIONS: Record<string, { label: string; reverse: string }> = {
   tp_rp: { label: 'Питание ТП от РП (по наименованию)', reverse: 'ТП, запитанные от этого РП' },
   line_building: { label: 'Кабель к жилому дому (по наименованию и улице)', reverse: 'Кабельные линии к дому' },
   thermo_building: { label: 'Термомодернизация этого дома (совпадение адреса)', reverse: 'Термомодернизация дома' },
+  lift_building: { label: 'Лифты этого дома МЖД', reverse: 'Сведения о лифтах дома' },
   related: { label: 'Связанный объект', reverse: 'Связанный объект' },
 };
 
@@ -45,6 +47,18 @@ export function rebuildAutoLinks(): { created: number; total: number } {
     const buildingAddresses = all(`SELECT id, norm_key FROM addresses WHERE kind = 'building'`);
     const addressByKey = new Map<string, number>(buildingAddresses.map((a) => [a.norm_key, a.id]));
     const buildingKeyById = new Map<number, string>(buildingAddresses.map((a) => [a.id, a.norm_key]));
+    // свободные ключи домов МЖД (та же очистка, что и для адресов из других файлов)
+    const mkdByLooseKey = new Map<string, number[]>();
+    const mkdBlocksByBase = new Map<string, number[]>(); // дома МЖД, учтённые по блокам: «74/1 блок 1…12»
+    for (const o of objs) {
+      if (o.category !== 'mkd') continue;
+      const k = looseBuildingKey(o.address_raw);
+      if (k) mkdByLooseKey.set(k, [...(mkdByLooseKey.get(k) ?? []), o.id]);
+      if (k?.includes(' блок ')) {
+        const base = k.split(' блок ')[0];
+        mkdBlocksByBase.set(base, [...(mkdBlocksByBase.get(base) ?? []), o.id]);
+      }
+    }
 
     const links: AutoLink[] = [];
     const byCode = (from: number, refs: string[], idx: Map<string, number[]>, relation: string, what: string) => {
@@ -80,6 +94,29 @@ export function rebuildAutoLinks(): { created: number; total: number } {
         }
       }
       if (o.category === 'el_tp') byCode(o.id, findRpRefs(o.name), rp, 'tp_rp', 'РП');
+      if (o.category === 'mkd_lifts' && !attrs.multi_address) {
+        // первый найденный вариант адреса с домами МЖД; новые дома не создаются
+        let linkedLift = false;
+        for (const cand of buildingMatchKeys(o.address_raw)) {
+          const addrId = cand.kind === 'exact' ? addressByKey.get('b:' + cand.key) : undefined;
+          const targets = cand.kind === 'exact' ? (addrId && mkdByAddress.get(addrId)) || [] : mkdByLooseKey.get(cand.key) ?? [];
+          if (!targets.length) continue;
+          for (const to of targets) {
+            links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: targets.length === 1 ? cand.confidence : Math.min(cand.confidence, 0.5),
+              note: targets.length === 1 ? cand.note : `${cand.note}; в реестре МЖД ${targets.length} записи с этим адресом` });
+          }
+          linkedLift = true;
+          break;
+        }
+        // запись относится к дому целиком, а в реестре МЖД дом учтён по блокам — связь со всеми блоками
+        const loose = buildingMatchKeys(o.address_raw).find((c) => c.kind === 'loose');
+        if (!linkedLift && loose && !loose.key.includes(' блок ')) {
+          for (const to of mkdBlocksByBase.get(loose.key) ?? []) {
+            links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: 0.5,
+              note: 'Запись о лифтах относится к дому целиком, в реестре МЖД дом учтён по блокам — связь со всеми блоками, требует проверки' });
+          }
+        }
+      }
       if (o.category === 'thermo' && o.address_id) {
         const targets = mkdByAddress.get(o.address_id) ?? [];
         for (const to of targets) {
