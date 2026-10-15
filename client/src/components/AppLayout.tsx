@@ -1,9 +1,9 @@
 import {
-  AlertOutlined, AppstoreOutlined, NodeIndexOutlined, ApartmentOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
+  AlertOutlined, AppstoreOutlined, MenuFoldOutlined, MenuUnfoldOutlined, NodeIndexOutlined, ApartmentOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
   EnvironmentOutlined, HistoryOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, MenuOutlined, SafetyOutlined, SettingOutlined,
   TableOutlined, TeamOutlined, ThunderboltOutlined, ToolOutlined, UserOutlined,
 } from '@ant-design/icons';
-import { Button, Drawer, Dropdown, Grid, Layout, Menu } from 'antd';
+import { Button, Drawer, Dropdown, Grid, Layout, Menu, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -54,8 +54,12 @@ function useMenuItems(): MenuProps['items'] {
   }, [meta, can]);
 }
 
-function SideMenu({ onNavigate }: { onNavigate?: () => void }) {
-  const items = useMenuItems();
+function SideMenu({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const fullItems = useMenuItems();
+  // в свёрнутом виде всплывающее подменю показывает название группы заголовком
+  const items = useMemo(() => (collapsed
+    ? (fullItems ?? []).map((it: any) => (it?.children ? { ...it, children: [{ type: 'group', key: `${it.key}-title`, label: it.label, children: it.children }] } : it))
+    : fullItems), [collapsed, fullItems]);
   const nav = useNavigate();
   const loc = useLocation();
   const selected = loc.pathname.startsWith('/admin/imports') ? '/admin/imports' : loc.pathname;
@@ -72,20 +76,23 @@ function SideMenu({ onNavigate }: { onNavigate?: () => void }) {
   }, [loc.pathname]);
   return (
     <>
-      <div className="app-logo">
+      <div className={`app-logo${collapsed ? ' collapsed' : ''}`}>
         <div className="mark"><HomeOutlined style={{ color: '#fff' }} /></div>
-        <div>
-          <div className="t1">{t('appName')}</div>
-          <div className="t2">Единая база объектов ЖКХ</div>
-        </div>
+        {!collapsed && (
+          <div>
+            <div className="t1">{t('appName')}</div>
+            <div className="t2">Единая база объектов ЖКХ</div>
+          </div>
+        )}
       </div>
       <Menu
         theme="dark"
         mode="inline"
         items={items}
         selectedKeys={[selected]}
-        openKeys={open}
-        onOpenChange={(k) => setOpen(k as string[])}
+        inlineCollapsed={collapsed}
+        // в свёрнутом виде подразделы открываются всплывающим списком — раскрытые группы не навязываются
+        {...(collapsed ? {} : { openKeys: open, onOpenChange: (k: string[]) => setOpen(k) })}
         onClick={(e) => {
           nav(e.key);
           onNavigate?.();
@@ -95,11 +102,30 @@ function SideMenu({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+const SIDER_KEY = 'zhkh_sider_collapsed';
+
+function loadCollapsed(): boolean {
+  try {
+    const v = localStorage.getItem(SIDER_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  } catch { /* хранилище недоступно */ }
+  return typeof window !== 'undefined' && window.innerWidth < 1200;
+}
+
 export default function AppLayout() {
   const { user, reload } = useSession();
   const screens = Grid.useBreakpoint();
   const mobile = !screens.lg;
   const [drawer, setDrawer] = useState(false);
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const toggleSider = () => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(SIDER_KEY, c ? '0' : '1');
+      } catch { /* хранилище недоступно */ }
+      return !c;
+    });
+  };
   const nav = useNavigate();
   const loc = useLocation();
   const { data: dash, reload: reloadStatus } = useApi<{ lastUpdate: string | null }>('/status');
@@ -123,8 +149,8 @@ export default function AppLayout() {
   return (
     <Layout style={{ minHeight: '100%' }}>
       {!mobile && (
-        <Sider width={256} style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'auto' }}>
-          <SideMenu />
+        <Sider width={256} collapsedWidth={64} collapsed={collapsed} trigger={null} className="app-sider">
+          <SideMenu collapsed={collapsed} />
         </Sider>
       )}
       <Drawer open={mobile && drawer} onClose={() => setDrawer(false)} placement="left" width={280} styles={{ body: { padding: 0, background: '#1b2a3a' }, header: { display: 'none' } }}>
@@ -132,7 +158,14 @@ export default function AppLayout() {
       </Drawer>
       <Layout style={{ minWidth: 0 }}>
         <Header className="app-header">
-          {mobile && <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawer(true)} aria-label="Меню" />}
+          {mobile ? (
+            <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawer(true)} aria-label="Меню" />
+          ) : (
+            <Tooltip title={collapsed ? 'Развернуть меню' : 'Свернуть меню'} placement="bottomLeft">
+              <Button type="text" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={toggleSider}
+                aria-label={collapsed ? 'Развернуть меню' : 'Свернуть меню'} aria-expanded={!collapsed} />
+            </Tooltip>
+          )}
           <div className="search"><GlobalSearch /></div>
           <div style={{ flex: 'none', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
             <span className="meta">{t('header.updated')}: {fmtDateTime(dash?.lastUpdate)}</span>
