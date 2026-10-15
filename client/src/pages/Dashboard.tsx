@@ -106,6 +106,62 @@ export default function Dashboard() {
                   </Card>
                 </Col>
               )}
+              {d.repair && (
+                <Col xs={24} xl={12}>
+                  <Card size="small" title={`Капитальный ремонт МЖД: план ${d.repair.year ?? ''}`} extra={<a onClick={() => nav('/c/capital_repair')}>Список →</a>}>
+                    <Row gutter={[8, 8]}>
+                      <Col span={8}><Kpi label="Строк в списке" value={fmtNum(d.repair.records)} hint={`домов МЖД: ${d.repair.houses}`} onClick={() => nav('/c/capital_repair')} /></Col>
+                      <Col span={16}><Kpi label="Всего, ₸" value={fmtMoney(d.repair.total)} hint="СМР + авторский + технический надзор" /></Col>
+                    </Row>
+                    <div style={{ marginTop: 8 }}>
+                      <BarChartBox horizontal data={d.repair.byType} x="t" y="s" valueLabel="Сумма" unit="₸" onClick={(r) => f('capital_repair', { work_type: [r.t] })} />
+                    </div>
+                  </Card>
+                </Col>
+              )}
+              {d.yards && (
+                <Col xs={24} xl={12}>
+                  <Card size="small" title="Благоустройство дворов" extra={<a onClick={() => nav('/c/yard_contracts')}>Договоры →</a>}>
+                    <Row gutter={[8, 8]}>
+                      <Col span={8}><Kpi label="Утверждённый перечень" value={fmtNum(d.yards.approved)} hint={`${fmtNum(d.yards.approvedArea, 2)} га`} onClick={() => nav('/c/yards_approved')} /></Col>
+                      <Col span={8}><Kpi label="Дворов по договорам" value={fmtNum(d.yards.contractYards)} hint={`${d.yards.contracts} договоров`} onClick={() => nav('/c/yard_contracts')} /></Col>
+                      <Col span={8}><Kpi label="Не реализовано" value={fmtNum(d.yards.unrealized)} hint={`из ${d.yards.design} адресов проектировщиков`} onClick={() => f('yards_design', { status: ['Не реализован'] })} /></Col>
+                      <Col span={8}><Kpi label="Стоимость, тыс. ₸" value={fmtNum(d.yards.contractsCost, 0)} hint="после корректировки" /></Col>
+                      <Col span={8}><Kpi label="Освоено, тыс. ₸" value={fmtNum(d.yards.contractsSpent, 0)} hint="2022–2026, по строкам" /></Col>
+                      <Col span={8}><Kpi label="Осталось, тыс. ₸" value={fmtNum(d.yards.contractsRemaining, 0)} hint="необходимо для завершения" /></Col>
+                    </Row>
+                    <div style={{ marginTop: 8 }}>
+                      <BarChartBox data={d.yards.spentByYear} x="year" y="spent" valueLabel="Освоено" unit="тыс. ₸" height={200} />
+                    </div>
+                  </Card>
+                </Col>
+              )}
+              {d.green && (
+                <Col xs={24} xl={12}>
+                  <Card size="small" title="Зелёные насаждения (инвентаризация 01.12.2025)" extra={<a onClick={() => nav('/c/green_inventory')}>Реестр →</a>}>
+                    <Row gutter={[8, 8]}>
+                      {d.green.byType.map((g: any) => (
+                        <Col key={g.t} span={12}><Kpi label={g.t} value={fmtNum(g.qty)} hint={`${g.species} пород`} onClick={() => f('green_inventory', { record_type: [g.t] })} /></Col>
+                      ))}
+                    </Row>
+                    <div style={{ marginTop: 8 }}>
+                      <BarChartBox horizontal data={d.green.top} x="name" y="qty" valueLabel="Количество" unit="шт." />
+                    </div>
+                  </Card>
+                </Col>
+              )}
+              {d.roads && (
+                <Col xs={24} xl={12}>
+                  <Card size="small" title="Дорожная инфраструктура: потребность на 2022 год" extra={<a onClick={() => nav('/c/road_needs')}>Реестр →</a>}>
+                    <Row gutter={[8, 8]}>
+                      {d.roads.map((r: any) => (
+                        <Col key={r.sheet} span={12}><Kpi label={`Лист «${r.sheet}»`} value={`${fmtNum(r.cost, 0)} тыс. ₸`} hint={`${r.n} объектов, в г. Атырау: ${r.in_city}`} onClick={() => f('road_needs', { sheet: [r.sheet] })} /></Col>
+                      ))}
+                    </Row>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Две версии таблицы из файла «100 ДВОР…» — показываются отдельно, не суммируются.</div>
+                  </Card>
+                </Col>
+              )}
               {d.thermo && (
                 <Col xs={24} xl={12}>
                   <Card size="small" title="Термомодернизация: выделенные средства по годам, ₸">

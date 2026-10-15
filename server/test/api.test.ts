@@ -260,3 +260,60 @@ test('лифты МЖД: полный перенос, сверка итогов,
   const q = (await admin.get('/quality?type=unlinked&category=mkd_lifts&pageSize=500')).body;
   assert.equal(q.issues.total, 214 - linked);
 });
+
+const SRC_DIR = fs.existsSync(SRC) ? fs.readdirSync(SRC) : [];
+/** Имена файлов могут быть в разной нормализации Unicode (й = и + ˘) — ищем по NFC. */
+const findSrc = (needle: string) => {
+  const f = SRC_DIR.find((n) => n.normalize('NFC').includes(needle.normalize('NFC')));
+  return f ? path.join(SRC, f) : null;
+};
+const NEW_FILES = {
+  yards100: findSrc('100 ДВОР'),
+  yards150: findSrc('150 дворов'),
+  green: findSrc('Инвентаризация_зеленых'),
+  repair: findSrc('список на 2026'),
+};
+
+async function importAll(file: string) {
+  const fd = new FormData();
+  fd.append('file', new Blob([new Uint8Array(fs.readFileSync(file))]), path.basename(file));
+  const up = await admin.req('POST', '/admin/imports/upload', fd);
+  const out: any[] = [];
+  for (const sh of up.body.sheets) {
+    if (sh.detected.code === 'generic') continue;
+    const pv = await admin.post('/admin/imports/preview', { sourceFileId: up.body.sourceFile.id, sheet: sh.name, profile: sh.detected.code });
+    const imp = (await admin.get(`/admin/imports/${pv.body.id}`)).body;
+    await admin.post(`/admin/imports/${pv.body.id}/apply`);
+    out.push({ sheet: sh.name, profile: sh.detected.code, summary: imp.summary, totals: imp.control_totals });
+  }
+  return out;
+}
+
+test('дворы, капремонт 2026, насаждения, дороги: полный перенос и сверка итогов', { skip: !haveFiles || Object.values(NEW_FILES).some((f) => !f) }, async () => {
+  const mkdBefore = db.scalar<number>(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`);
+  const r100 = await importAll(NEW_FILES.yards100!);
+  assert.deepEqual(r100.map((r) => [r.sheet, r.profile, r.summary.new]), [['2022', 'road_needs', 21], ['2022 (2)', 'road_needs', 18], ['Детальная таблица', 'yard_contracts', 21]]);
+  // ошибки исходного файла выявлены: «ИТОГО» листа 2022 и итог освоения SHEBERBUILD
+  assert.ok(r100[0].totals.some((t: any) => t.match === false && /ИТОГО/.test(t.label) && /не включены/.test(t.note)));
+  assert.ok(r100[2].totals.some((t: any) => t.match === false && /SHEBERBUILD/.test(t.label)));
+  const r150 = await importAll(NEW_FILES.yards150!);
+  assert.deepEqual(r150.map((r) => r.summary.new), [100, 50, 57, 50, 17]);
+  assert.ok(r150.every((r) => r.summary.missing === 0), 'листы одного формата не считаются «отсутствующими» друг для друга');
+  const rg = await importAll(NEW_FILES.green!);
+  assert.equal(rg[0].summary.new, 89);
+  assert.ok(rg[0].totals.every((t: any) => t.match));
+  const rr = await importAll(NEW_FILES.repair!);
+  assert.equal(rr[0].summary.new, 112);
+  assert.ok(rr[0].totals.length === 6 && rr[0].totals.every((t: any) => t.match), 'итоги и подпись «67 лифт / 45 СМР» совпадают');
+  // новые дома МЖД не создаются
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), mkdBefore);
+  // привязка к МЖД и вкладка «Ремонт и благоустройство»
+  assert.ok(db.scalar<number>(`SELECT count(DISTINCT from_id) FROM object_links WHERE relation = 'repair_building'`) >= 80);
+  assert.ok(db.scalar<number>(`SELECT count(DISTINCT to_id) FROM object_links WHERE relation = 'yard_building'`) >= 300);
+  const house = db.get(`SELECT m.uid FROM object_links l JOIN objects m ON m.id = l.to_id WHERE l.relation = 'repair_building' LIMIT 1`)!;
+  const card = (await admin.get(`/objects/${house.uid}`)).body;
+  assert.ok(card.programs.some((p: any) => p.category === 'capital_repair'));
+  // повторный импорт тех же файлов — без дубликатов
+  const again = await importAll(NEW_FILES.yards150!);
+  assert.ok(again.every((r) => r.summary.new === 0 && r.summary.missing === 0 && r.summary.unchanged === r.summary.total));
+});

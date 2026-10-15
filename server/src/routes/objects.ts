@@ -121,9 +121,17 @@ objectsRouter.get('/objects/:uid', (req, res) => {
             WHERE l.to_id = ? AND l.relation = 'lift_building' AND l.status != 'rejected' AND o.deleted_at IS NULL ORDER BY o.source_row`, row.id)
         .map((o) => ({ ...presentObject(o, conf), link: { id: o.link_id, status: o.link_status, confidence: o.link_confidence, note: o.link_note } }))
     : [];
+  // программы по дому МЖД: термомодернизация, капремонт, благоустройство двора
+  const programs = row.category === 'mkd'
+    ? all(`SELECT o.*, l.relation, l.id link_id, l.status link_status, l.note link_note FROM object_links l JOIN objects o ON o.id = l.from_id
+            WHERE l.to_id = ? AND l.relation IN ('thermo_building','repair_building','yard_building') AND l.status != 'rejected' AND o.deleted_at IS NULL
+              AND o.category IN (${allowedFor(req).map(() => '?').join(',')}) ORDER BY l.relation, o.category, o.source_row`, row.id, ...allowedFor(req))
+        .map((o) => ({ ...presentObject(o, conf), relation: o.relation, link: { id: o.link_id, status: o.link_status, note: o.link_note } }))
+    : [];
   res.json({
     object: presentObject(row, conf, cat),
     lifts,
+    programs,
     category: cat,
     address,
     area,

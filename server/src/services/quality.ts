@@ -156,6 +156,32 @@ export function computeQuality(allowed: string[]) {
     }
   }
 
+  // капремонт и дворы: привязка к домам МЖД (новые дома не создаются)
+  const houseRelations: [string, string, string][] = [
+    ['capital_repair', 'repair_building', 'Дом не найден в реестре МЖД — проверьте адрес и привяжите вручную (вкладка «Связи»)'],
+    ['yards_approved', 'yard_building', ''],
+    ['yards_design', 'yard_building', ''],
+    ['yard_contracts', 'yard_building', ''],
+  ];
+  for (const [cat, relation, unlinkedText] of houseRelations) {
+    if (!allowed.includes(cat)) continue;
+    const linkedHouses = new Map<number, number>();
+    for (const r of all(`SELECT from_id, count(DISTINCT to_id) n FROM object_links WHERE relation = ? AND status != 'rejected' GROUP BY from_id`, relation)) linkedHouses.set(r.from_id, r.n);
+    for (const o of objs) {
+      if (o.category !== cat) continue;
+      if (cat === 'yard_contracts' && o._attrs.role !== 'Подрядчик') continue; // адреса указаны только у строки подрядчика
+      const linked = linkedHouses.get(o.id) ?? 0;
+      const expected = typeof o._attrs.houses_count === 'number' ? (o._attrs.houses_count as number) : String(o._attrs.houses_list ?? '').split('; ').filter(Boolean).length;
+      if (!linked) {
+        push(o, 'unlinked', 'warning', unlinkedText || (expected
+          ? `Ни один из домов (${o._attrs.houses_list}) не найден в реестре МЖД — проверьте адреса и привяжите вручную`
+          : 'Из адреса не удалось выделить номера домов — привяжите вручную'), 'address_raw');
+      } else if (cat !== 'capital_repair' && expected && linked < expected) {
+        push(o, 'unlinked', 'info', `Привязано к МЖД ${linked} из ${expected} домов адреса; остальные не найдены в реестре МЖД`, 'address_raw');
+      }
+    }
+  }
+
   // термомодернизация без найденного дома в реестре МЖД
   if (allowed.includes('thermo')) {
     const linked = new Set(all(`SELECT from_id FROM object_links WHERE relation = 'thermo_building' AND status != 'rejected'`).map((r) => r.from_id));

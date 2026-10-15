@@ -22,6 +22,27 @@ const LINK_STATUS: Record<string, { color: string; label: string }> = {
   rejected: { color: 'default', label: 'отклонена' },
 };
 
+const money = (v: unknown, unit = '₸') => (typeof v === 'number' ? `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${unit}` : '—');
+
+/** Краткое описание записи программы для вкладки «Ремонт и благоустройство» карточки МЖД. */
+function programSummary(p: any): string {
+  const a = p.attrs ?? {};
+  switch (p.category) {
+    case 'thermo':
+      return [a.program_year && `${a.program_year} г.`, a.org_name, `выделено ${money(a.amount_kzt)}`, p.status].filter(Boolean).join(' · ');
+    case 'capital_repair':
+      return [a.program_year && `план ${a.program_year} г.`, a.work_type, a.entrance && `подъезд ${a.entrance}`, `всего ${money(a.total_kzt)}`].filter(Boolean).join(' · ');
+    case 'yards_approved':
+      return [a.area_ha != null && `площадь ${a.area_ha} га`, `НПЦзем: ${a.npc_zem ?? '—'}`, `зем. отношения: ${a.land_relations ?? '—'}`, `жилинспекция: ${a.housing_inspection ?? '—'}`].filter(Boolean).join(' · ');
+    case 'yards_design':
+      return [a.design_org, p.status, a.sheet && `лист «${a.sheet}»`].filter(Boolean).join(' · ');
+    case 'yard_contracts':
+      return [a.company, a.contract, `стоимость ${money(a.cost_after, 'тыс. ₸')}`, `освоено ${money(a.spent_total, 'тыс. ₸')}`, `осталось ${money(a.remaining, 'тыс. ₸')}`].filter(Boolean).join(' · ');
+    default:
+      return p.address_raw ?? '';
+  }
+}
+
 function show(v: unknown): string {
   if (v == null || v === '') return '—';
   return typeof v === 'number' ? v.toLocaleString('ru-RU') : String(v);
@@ -175,6 +196,27 @@ export default function ObjectCard() {
             ]} />
         </>
       ) : <Empty description="В файле лифтов сведений по этому дому нет (или запись не сопоставлена — см. «Качество данных» → «Нет связи со связанным реестром»)" />,
+    }] : []),
+    ...(cat.code === 'mkd' ? [{
+      key: 'programs', label: `Ремонт и благоустройство (${data.programs.length})`,
+      children: data.programs.length ? (
+        <>
+          <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            message="Термомодернизация, капитальный ремонт и благоустройство двора, относящиеся к этому дому. Привязка выполнена по адресу (для дворов — по списку домов в адресе) и требует подтверждения." />
+          <Table size="small" rowKey={(p: any) => `${p.relation}-${p.uid}`} dataSource={data.programs} pagination={false} scroll={{ x: 1000 }}
+            columns={[
+              { title: 'Программа', width: 170, render: (_, p: any) => <Tag color={p.relation === 'repair_building' ? 'orange' : p.relation === 'yard_building' ? 'green' : 'blue'} style={{ whiteSpace: 'normal' }}>{meta?.categories.find((c) => c.code === p.category)?.short_name ?? p.category}</Tag> },
+              { title: 'Запись', width: 280, render: (_, p: any) => <span><ObjectLink uid={p.uid} name={p.name} /><div className="muted mono">{p.uid}</div></span> },
+              { title: 'Сведения', render: (_, p: any) => programSummary(p) },
+              { title: 'Привязка', width: 150, render: (_, p: any) => (
+                <Tooltip title={p.link.note}>
+                  <Tag color={p.link.status === 'confirmed' ? 'green' : 'gold'}>{p.link.status === 'confirmed' ? 'подтверждена' : 'предложена'}</Tag>
+                  {can('links.manage') && p.link.status !== 'confirmed' && <Button size="small" icon={<CheckOutlined />} onClick={() => reviewLink(p.link.id, 'confirmed')} />}
+                </Tooltip>
+              ) },
+            ]} />
+        </>
+      ) : <Empty description="Сведений о термомодернизации, капремонте или благоустройстве двора по этому дому нет" />,
     }] : []),
     {
       key: 'links', label: `Связи (${data.links.length})`,

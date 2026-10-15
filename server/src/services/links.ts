@@ -12,6 +12,8 @@ export const RELATIONS: Record<string, { label: string; reverse: string }> = {
   line_building: { label: 'Кабель к жилому дому (по наименованию и улице)', reverse: 'Кабельные линии к дому' },
   thermo_building: { label: 'Термомодернизация этого дома (совпадение адреса)', reverse: 'Термомодернизация дома' },
   lift_building: { label: 'Лифты этого дома МЖД', reverse: 'Сведения о лифтах дома' },
+  repair_building: { label: 'Капитальный ремонт этого дома МЖД', reverse: 'Капитальный ремонт дома (план)' },
+  yard_building: { label: 'Благоустройство двора у дома МЖД', reverse: 'Благоустройство двора дома' },
   related: { label: 'Связанный объект', reverse: 'Связанный объект' },
 };
 
@@ -60,6 +62,28 @@ export function rebuildAutoLinks(): { created: number; total: number } {
       }
     }
 
+    /**
+     * Поиск дома МЖД по адресу: точный ключ → «свободный» ключ → дом целиком ↔ его блоки.
+     * Новые дома не создаются; если ничего не найдено — null.
+     */
+    const findMkd = (addr: string | null | undefined): { targets: number[]; confidence: number; note: string } | null => {
+      const cands = buildingMatchKeys(addr);
+      for (const cand of cands) {
+        const addrId = cand.kind === 'exact' ? addressByKey.get('b:' + cand.key) : undefined;
+        const targets = cand.kind === 'exact' ? (addrId && mkdByAddress.get(addrId)) || [] : mkdByLooseKey.get(cand.key) ?? [];
+        if (!targets.length) continue;
+        return {
+          targets,
+          confidence: targets.length === 1 ? cand.confidence : Math.min(cand.confidence, 0.5),
+          note: targets.length === 1 ? cand.note : `${cand.note}; в реестре МЖД ${targets.length} записи с этим адресом`,
+        };
+      }
+      const loose = cands.find((c) => c.kind === 'loose');
+      const blocks = loose && !loose.key.includes(' блок ') ? mkdBlocksByBase.get(loose.key) ?? [] : [];
+      if (blocks.length) return { targets: blocks, confidence: 0.5, note: 'Запись относится к дому целиком, в реестре МЖД дом учтён по блокам — связь со всеми блоками, требует проверки' };
+      return null;
+    };
+
     const links: AutoLink[] = [];
     const byCode = (from: number, refs: string[], idx: Map<string, number[]>, relation: string, what: string) => {
       for (const code of refs) {
@@ -95,25 +119,21 @@ export function rebuildAutoLinks(): { created: number; total: number } {
       }
       if (o.category === 'el_tp') byCode(o.id, findRpRefs(o.name), rp, 'tp_rp', 'РП');
       if (o.category === 'mkd_lifts' && !attrs.multi_address) {
-        // первый найденный вариант адреса с домами МЖД; новые дома не создаются
-        let linkedLift = false;
-        for (const cand of buildingMatchKeys(o.address_raw)) {
-          const addrId = cand.kind === 'exact' ? addressByKey.get('b:' + cand.key) : undefined;
-          const targets = cand.kind === 'exact' ? (addrId && mkdByAddress.get(addrId)) || [] : mkdByLooseKey.get(cand.key) ?? [];
-          if (!targets.length) continue;
-          for (const to of targets) {
-            links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: targets.length === 1 ? cand.confidence : Math.min(cand.confidence, 0.5),
-              note: targets.length === 1 ? cand.note : `${cand.note}; в реестре МЖД ${targets.length} записи с этим адресом` });
-          }
-          linkedLift = true;
-          break;
-        }
-        // запись относится к дому целиком, а в реестре МЖД дом учтён по блокам — связь со всеми блоками
-        const loose = buildingMatchKeys(o.address_raw).find((c) => c.kind === 'loose');
-        if (!linkedLift && loose && !loose.key.includes(' блок ')) {
-          for (const to of mkdBlocksByBase.get(loose.key) ?? []) {
-            links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: 0.5,
-              note: 'Запись о лифтах относится к дому целиком, в реестре МЖД дом учтён по блокам — связь со всеми блоками, требует проверки' });
+        const found = findMkd(o.address_raw);
+        for (const to of found?.targets ?? []) links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: found!.confidence, note: found!.note });
+      }
+      if (o.category === 'capital_repair') {
+        const found = findMkd(o.address_raw);
+        for (const to of found?.targets ?? []) links.push({ from: o.id, to, relation: 'repair_building', method: 'auto:address', confidence: found!.confidence, note: found!.note });
+      }
+      if (['yards_approved', 'yards_design', 'yard_contracts'].includes(o.category) && attrs.houses_list) {
+        // двор относится к нескольким домам: связь с каждым найденным домом из разобранного списка
+        for (const house of String(attrs.houses_list).split('; ')) {
+          // «Авангард-2, 21» → «Авангард-2 21»: запятая перед номером не должна читаться как список домов
+          const found = findMkd(house.replace(/,\s*(?=[^,]*$)/, ' '));
+          for (const to of found?.targets ?? []) {
+            links.push({ from: o.id, to, relation: 'yard_building', method: 'auto:address', confidence: Math.min(found!.confidence, 0.7),
+              note: `Дом «${house}» выделен из списка адресов двора; ${found!.note.charAt(0).toLowerCase()}${found!.note.slice(1)}` });
           }
         }
       }

@@ -130,8 +130,8 @@ export function createPreview(sourceFileId: number, sheetName: string, profileCo
     if (cats.length) {
       const missing = all(
         `SELECT o.* FROM objects o JOIN imports i ON i.id = o.source_import_id
-          WHERE o.deleted_at IS NULL AND o.natural_key IS NOT NULL AND i.profile = ? AND o.category IN (${cats.map(() => '?').join(',')})`,
-        profile.code, ...cats);
+          WHERE o.deleted_at IS NULL AND o.natural_key IS NOT NULL AND i.profile = ? AND i.sheet_name = ? AND o.category IN (${cats.map(() => '?').join(',')})`,
+        profile.code, sheetName, ...cats);
       for (const o of missing) {
         if (seenKeys.has(`${o.category}|${o.natural_key}`)) continue;
         insertRow({ rowNo: null, category: o.category, naturalKey: o.natural_key, messages: [{ level: 'warning', text: `Объект ${o.uid} «${o.name}» есть в базе, но отсутствует в новом файле. Автоматически не удаляется.` }] }, 'missing', { objectId: o.id });

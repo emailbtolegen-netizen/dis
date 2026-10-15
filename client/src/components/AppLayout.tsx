@@ -1,5 +1,5 @@
 import {
-  AlertOutlined, ApartmentOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
+  AlertOutlined, AppstoreOutlined, NodeIndexOutlined, ApartmentOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
   EnvironmentOutlined, HistoryOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, MenuOutlined, SafetyOutlined, SettingOutlined,
   TableOutlined, TeamOutlined, ThunderboltOutlined, ToolOutlined, UserOutlined,
 } from '@ant-design/icons';
@@ -34,6 +34,8 @@ function useMenuItems(): MenuProps['items'] {
       });
     }
     if (byDomain('utilities').length) items.push({ key: 'g-utilities', icon: <ToolOutlined />, label: t('menu.utilities'), children: byDomain('utilities').map(catItem) });
+    if (byDomain('improvement').length) items.push({ key: 'g-improvement', icon: <AppstoreOutlined />, label: 'Благоустройство и озеленение', children: byDomain('improvement').map(catItem) });
+    if (byDomain('roads').length) items.push({ key: 'g-roads', icon: <NodeIndexOutlined />, label: 'Дорожная инфраструктура', children: byDomain('roads').map(catItem) });
     if (byDomain('other').length) items.push({ key: 'g-other', icon: <DatabaseOutlined />, label: 'Прочие объекты', children: byDomain('other').map(catItem) });
     items.push(
       { key: '/addresses', icon: <EnvironmentOutlined />, label: t('menu.addresses') },

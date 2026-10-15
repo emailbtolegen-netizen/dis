@@ -31,6 +31,8 @@ const STREET_SYNONYMS: [RegExp, string][] = [
   [/бибитшилик/g, 'бейбитшилик'],
   [/сарыарк/g, 'сары-арк'],
   [/отемисулы|утемисулы|утемисов\p{L}*/gu, ' '],
+  // имена перед фамилией в названии улицы: «Исатай Тайманова», «Рысбай Габдиева», «Сырым Датова»
+  [/(?<![\p{L}])(?:исатай|рысбай|сырым|султан)\s+/gu, ''],
 ];
 
 /** Свободный ключ здания; null — если номер дома не выделяется. */
@@ -55,8 +57,20 @@ export function looseBuildingKey(raw: string | null | undefined): string | null 
 }
 
 /** Кандидаты для поиска по убыванию достоверности. Для строк с несколькими домами — пусто. */
-export function buildingMatchKeys(raw: string | null | undefined): MatchCandidate[] {
-  if (!raw || isMultiAddress(raw)) return [];
+/** Пометки о подъездах и опечатки, мешающие сопоставлению: «1 подьезд», «подъезд №3», «(подьезд№3)», «домс». */
+export function stripEntrances(raw: string): string {
+  return raw
+    .replace(/\(?\s*под[ъь]езд\p{L}*\s*№?\s*\d+(?:\s*,\s*\d+)*\s*\)?/giu, ' ')
+    .replace(/,?\s*\d+\s*-?\s*(?:й|ой)?\s*-?\s*под[ъь]езд\p{L}*/giu, ' ')
+    .replace(/(?<![\p{L}])домс(?![\p{L}])/giu, 'дом')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function buildingMatchKeys(raw0: string | null | undefined): MatchCandidate[] {
+  if (!raw0) return [];
+  const raw = stripEntrances(raw0);
+  if (isMultiAddress(raw)) return [];
   const out: MatchCandidate[] = [];
   const exact = parseAddress(raw).buildingKey;
   if (exact) out.push({ key: exact, kind: 'exact', confidence: 0.85, note: 'Совпадение нормализованного адреса' });

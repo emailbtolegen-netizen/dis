@@ -93,6 +93,46 @@ export function dashboard(allowed: string[]) {
       attention: all(`SELECT json_extract(attrs, '$.attention') a, count(*) n FROM objects WHERE ${where} AND json_extract(attrs, '$.attention') IS NOT NULL GROUP BY a ORDER BY n DESC`),
     };
   }
+  const w = (c: string) => `deleted_at IS NULL AND category = '${c}'`;
+  const linkedHouses = (rel: string, cat: string) =>
+    get(`SELECT count(DISTINCT to_id) n FROM object_links WHERE relation = '${rel}' AND status != 'rejected' AND from_id IN (SELECT id FROM objects WHERE ${w(cat)})`)!.n;
+  if (allowed.includes('capital_repair') && count('capital_repair')) {
+    res.repair = {
+      records: count('capital_repair'),
+      total: get(`SELECT round(sum(json_extract(attrs, '$.total_kzt')), 2) s FROM objects WHERE ${w('capital_repair')}`)!.s,
+      byType: all(`SELECT json_extract(attrs, '$.work_type') t, count(*) n, round(sum(json_extract(attrs, '$.total_kzt')), 2) s FROM objects WHERE ${w('capital_repair')} GROUP BY t ORDER BY s DESC`),
+      houses: linkedHouses('repair_building', 'capital_repair'),
+      year: get(`SELECT max(json_extract(attrs, '$.program_year')) y FROM objects WHERE ${w('capital_repair')}`)!.y,
+    };
+  }
+  if (['yards_approved', 'yard_contracts', 'yards_design'].some((c) => allowed.includes(c) && count(c))) {
+    const contracts = get(`SELECT round(sum(json_extract(attrs, '$.cost_after')), 3) cost, round(sum(json_extract(attrs, '$.spent_total')), 3) spent,
+                                  round(sum(json_extract(attrs, '$.remaining')), 3) remaining, sum(json_extract(attrs, '$.yards_count')) yards
+                             FROM objects WHERE ${w('yard_contracts')}`)!;
+    res.yards = {
+      approved: count('yards_approved'),
+      approvedArea: get(`SELECT round(sum(json_extract(attrs, '$.area_ha')), 4) a FROM objects WHERE ${w('yards_approved')}`)!.a,
+      design: count('yards_design'),
+      unrealized: get(`SELECT count(*) n FROM objects WHERE ${w('yards_design')} AND status = 'Не реализован'`)!.n,
+      contracts: count('yard_contracts'),
+      contractsCost: contracts.cost, contractsSpent: contracts.spent, contractsRemaining: contracts.remaining, contractYards: contracts.yards,
+      spentByYear: ['2022', '2023', '2024', '2025', '2026'].map((y) => ({
+        year: y, spent: get(`SELECT round(sum(json_extract(attrs, '$.spent_${y}')), 3) s FROM objects WHERE ${w('yard_contracts')}`)!.s ?? 0,
+      })),
+      houses: get(`SELECT count(DISTINCT to_id) n FROM object_links WHERE relation = 'yard_building' AND status != 'rejected'`)!.n,
+    };
+  }
+  if (allowed.includes('green_inventory') && count('green_inventory')) {
+    res.green = {
+      byType: all(`SELECT json_extract(attrs, '$.record_type') t, count(*) species, sum(json_extract(attrs, '$.quantity')) qty FROM objects WHERE ${w('green_inventory')} GROUP BY t ORDER BY t DESC`),
+      top: all(`SELECT name, json_extract(attrs, '$.quantity') qty FROM objects WHERE ${w('green_inventory')} AND json_extract(attrs, '$.record_type') = 'Существующие насаждения'
+                ORDER BY qty DESC LIMIT 8`),
+    };
+  }
+  if (allowed.includes('road_needs') && count('road_needs')) {
+    res.roads = all(`SELECT json_extract(attrs, '$.sheet') sheet, count(*) n, round(sum(json_extract(attrs, '$.total_cost')), 2) cost,
+                            sum(json_extract(attrs, '$.in_city') = 'да') in_city FROM objects WHERE ${w('road_needs')} GROUP BY sheet ORDER BY sheet`);
+  }
   if (allowed.includes('thermo') && count('thermo')) {
     res.thermo = {
       count: count('thermo'),
