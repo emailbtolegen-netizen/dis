@@ -1,4 +1,5 @@
 import type { Profile, Sheet } from '../types.ts';
+import { emergencyProfile } from './emergency.ts';
 import { energyProfile } from './energy.ts';
 import { genericProfile } from './generic.ts';
 import { greenProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignProfile } from './improvement.ts';
@@ -9,7 +10,7 @@ import { thermoProfile } from './thermo.ts';
 
 /** Профили в порядке проверки; generic — последний (подходит для любой таблицы). */
 export const PROFILES: Profile[] = [
-  mkdProfile, energyProfile, thermoProfile, liftsProfile, repairProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignProfile, greenProfile, roadsProfile,
+  mkdProfile, energyProfile, thermoProfile, liftsProfile, repairProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignProfile, greenProfile, roadsProfile, emergencyProfile,
   genericProfile,
 ];
 

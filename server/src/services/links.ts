@@ -12,6 +12,7 @@ export const RELATIONS: Record<string, { label: string; reverse: string }> = {
   line_building: { label: 'Кабель к жилому дому (по наименованию и улице)', reverse: 'Кабельные линии к дому' },
   thermo_building: { label: 'Термомодернизация этого дома (совпадение адреса)', reverse: 'Термомодернизация дома' },
   lift_building: { label: 'Лифты этого дома МЖД', reverse: 'Сведения о лифтах дома' },
+  emergency_building: { label: 'Аварийный / ветхий: этот дом МЖД', reverse: 'Признание дома аварийным / ветхим' },
   repair_building: { label: 'Капитальный ремонт этого дома МЖД', reverse: 'Капитальный ремонт дома (план)' },
   yard_building: { label: 'Благоустройство двора у дома МЖД', reverse: 'Благоустройство двора дома' },
   related: { label: 'Связанный объект', reverse: 'Связанный объект' },
@@ -121,6 +122,11 @@ export function rebuildAutoLinks(): { created: number; total: number } {
       if (o.category === 'mkd_lifts' && !attrs.multi_address) {
         const found = findMkd(o.address_raw);
         for (const to of found?.targets ?? []) links.push({ from: o.id, to, relation: 'lift_building', method: 'auto:address', confidence: found!.confidence, note: found!.note });
+      }
+      if (o.category === 'mkd_emergency') {
+        // сначала русский вариант адреса из источника («улица Ауэзова, 18»), затем исходный
+        const found = findMkd(attrs.address_ru as string) ?? findMkd(o.address_raw);
+        for (const to of found?.targets ?? []) links.push({ from: o.id, to, relation: 'emergency_building', method: 'auto:address', confidence: found!.confidence, note: found!.note });
       }
       if (o.category === 'capital_repair') {
         const found = findMkd(o.address_raw);

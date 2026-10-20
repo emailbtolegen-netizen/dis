@@ -137,8 +137,17 @@ exploreRouter.get('/feeders', (req, res) => {
 
 exploreRouter.get('/map', (req, res) => {
   const allowed = allowedFor(req);
-  const points = all(`SELECT uid, name, category, status, address_raw, lat, lon FROM objects WHERE deleted_at IS NULL AND lat IS NOT NULL AND lon IS NOT NULL AND category IN (${inList(allowed)}) LIMIT 20000`, ...allowed);
+  const points = all(`SELECT uid, name, category, status, address_raw, lat, lon, year_built, attrs FROM objects WHERE deleted_at IS NULL AND lat IS NOT NULL AND lon IS NOT NULL AND category IN (${inList(allowed)}) LIMIT 20000`, ...allowed);
   const withoutCoords = all(`SELECT category, count(*) n FROM objects WHERE deleted_at IS NULL AND (lat IS NULL OR lon IS NULL) AND category IN (${inList(allowed)}) GROUP BY category`, ...allowed);
+  // для всплывающей карточки — неконфиденциальные поля категории
+  const conf = req.user!.permissions.includes('objects.confidential');
+  const cats = categories();
+  for (const p of points) {
+    const attrs = JSON.parse(p.attrs || '{}');
+    const cat = cats.get(p.category);
+    if (!conf) for (const f of cat?.fields ?? []) if (f.confidential) delete attrs[f.key];
+    p.attrs = attrs;
+  }
   res.json({ points, withoutCoords });
 });
 

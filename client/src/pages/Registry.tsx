@@ -1,4 +1,4 @@
-import { ClearOutlined, DownloadOutlined, FilterOutlined, PlusOutlined, SettingOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, DownloadOutlined, EnvironmentOutlined, FilterOutlined, PlusOutlined, SettingOutlined, WarningOutlined } from '@ant-design/icons';
 import { Alert, App, Badge, Button, Card, Checkbox, Empty, Grid, Input, Popover, Select, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
@@ -157,6 +157,7 @@ export default function Registry() {
                 }
               }}>Экспорт в Excel</Button>
             )}
+            {category?.code === 'mkd_emergency' && <Button icon={<EnvironmentOutlined />} onClick={() => nav('/map?category=mkd_emergency')}>Показать на карте</Button>}
             {can('objects.edit') && category && <Button type="primary" icon={<PlusOutlined />} onClick={() => nav(`/objects/new?category=${category.code}`)}>Добавить объект</Button>}
           </>
         }

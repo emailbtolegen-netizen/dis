@@ -53,3 +53,11 @@ body { background: #f2f4f7; -webkit-font-smoothing: antialiased; }
 .app-sider { position: sticky !important; top: 0; height: 100vh; overflow: auto; }
 .app-sider .ant-layout-sider-children { display: flex; flex-direction: column; }
 .app-logo.collapsed { justify-content: center; padding: 0; }
+
+/* Карта: легенда и список объектов */
+.map-legend { background: #fff; padding: 8px 10px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 12px; line-height: 1.7; color: #1f2933; }
+.map-legend .dot, .map-list-item .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); margin-right: 6px; vertical-align: -1px; flex: none; }
+.map-list-item { display: flex; gap: 6px; align-items: flex-start; padding: 6px 4px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+.map-list-item:hover, .map-list-item:focus { background: #f0f5fb; outline: none; }
+.map-list-item .dot { margin-top: 4px; }
+.map-list-item .t { font-size: 13px; color: #1f2933; }

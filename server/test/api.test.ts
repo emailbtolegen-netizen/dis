@@ -317,3 +317,22 @@ test('дворы, капремонт 2026, насаждения, дороги: �
   const again = await importAll(NEW_FILES.yards150!);
   assert.ok(again.every((r) => r.summary.new === 0 && r.summary.missing === 0 && r.summary.unchanged === r.summary.total));
 });
+
+test('карта аварийных домов (HTML): извлечение данных без выполнения скриптов, статусы, координаты, карта, главная панель', { skip: !haveFiles || !findSrc('karta-avariynyh') }, async () => {
+  const mkdBefore = db.scalar<number>(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`);
+  const r = await importAll(findSrc('karta-avariynyh')!);
+  assert.deepEqual(r.map((x) => [x.sheet, x.profile, x.summary.new, x.summary.invalid]), [['HOUSES', 'mkd_emergency', 88, 0]]);
+  const st = Object.fromEntries(db.all(`SELECT status, count(*) n, sum(lat IS NOT NULL AND lon IS NOT NULL) c FROM objects WHERE category = 'mkd_emergency' GROUP BY status`).map((x) => [x.status, [x.n, x.c]]));
+  assert.deepEqual(st, { 'Аварийный (признан, есть заключение)': [68, 68], 'Ветхий (заключения нет или назначен капремонт)': [20, 20] });
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), mkdBefore);
+  assert.ok(db.scalar<number>(`SELECT count(DISTINCT from_id) FROM object_links WHERE relation = 'emergency_building'`) >= 75);
+  const map = (await admin.get('/map')).body;
+  assert.equal(map.points.filter((p: any) => p.category === 'mkd_emergency').length, 88);
+  const d = (await admin.get('/dashboard')).body;
+  assert.deepEqual([d.totals.emergency.available, d.totals.emergency.count, d.totals.emergency.dilapidated], [true, 68, 20]);
+  // HTML без встроенных данных и таблиц — понятная ошибка, а не падение
+  const fd = new FormData();
+  fd.append('file', new Blob(['<!doctype html><html><body><script>alert(1)</script></body></html>']), 'empty.html');
+  const up = await admin.req('POST', '/admin/imports/upload', fd);
+  assert.equal(up.status, 400);
+});

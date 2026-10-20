@@ -28,6 +28,8 @@ const money = (v: unknown, unit = '₸') => (typeof v === 'number' ? `${v.toLoca
 function programSummary(p: any): string {
   const a = p.attrs ?? {};
   switch (p.category) {
+    case 'mkd_emergency':
+      return [p.status, a.conclusion && `заключение: ${a.conclusion}`, a.address_ru].filter(Boolean).join(' · ');
     case 'thermo':
       return [a.program_year && `${a.program_year} г.`, a.org_name, `выделено ${money(a.amount_kzt)}`, p.status].filter(Boolean).join(' · ');
     case 'capital_repair':
@@ -348,6 +350,11 @@ export default function ObjectCard() {
           </>
         }
       />
+      {(data.programs ?? []).filter((p: any) => p.relation === 'emergency_building').map((p: any) => (
+        <Alert key={p.uid} type={/аварий/i.test(p.status ?? '') ? 'error' : 'warning'} showIcon style={{ marginBottom: 12 }}
+          message={<span>Дом в перечне аварийных и ветхих: <b>{p.status}</b>{p.attrs?.conclusion ? ` · заключение: ${p.attrs.conclusion}` : ''}</span>}
+          description={<span><Link to={`/objects/${p.uid}`}>Запись {p.uid}</Link> · <Link to="/map?category=mkd_emergency">показать на карте</Link> · привязка по адресу {p.link.status === 'confirmed' ? 'подтверждена' : 'предложена — требует подтверждения'}</span>} />
+      ))}
       {data.issues.some((i: any) => i.severity !== 'info') && (
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Есть замечания к данным (${data.issues.length}). См. вкладку «Замечания».`} />
       )}

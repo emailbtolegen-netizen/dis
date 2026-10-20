@@ -159,6 +159,7 @@ export function computeQuality(allowed: string[]) {
   // капремонт и дворы: привязка к домам МЖД (новые дома не создаются)
   const houseRelations: [string, string, string][] = [
     ['capital_repair', 'repair_building', 'Дом не найден в реестре МЖД — проверьте адрес и привяжите вручную (вкладка «Связи»)'],
+    ['mkd_emergency', 'emergency_building', 'Аварийный/ветхий дом не найден в реестре МЖД — проверьте адрес и привяжите вручную (вкладка «Связи»)'],
     ['yards_approved', 'yard_building', ''],
     ['yards_design', 'yard_building', ''],
     ['yard_contracts', 'yard_building', ''],
@@ -176,7 +177,7 @@ export function computeQuality(allowed: string[]) {
         push(o, 'unlinked', 'warning', unlinkedText || (expected
           ? `Ни один из домов (${o._attrs.houses_list}) не найден в реестре МЖД — проверьте адреса и привяжите вручную`
           : 'Из адреса не удалось выделить номера домов — привяжите вручную'), 'address_raw');
-      } else if (cat !== 'capital_repair' && expected && linked < expected) {
+      } else if (!['capital_repair', 'mkd_emergency'].includes(cat) && expected && linked < expected) {
         push(o, 'unlinked', 'info', `Привязано к МЖД ${linked} из ${expected} домов адреса; остальные не найдены в реестре МЖД`, 'address_raw');
       }
     }

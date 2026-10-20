@@ -24,7 +24,7 @@ export function createApp() {
       useDefaults: true,
       directives: {
         // карта OpenStreetMap — только если в данных есть координаты
-        'img-src': ["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org'],
+        'img-src': ["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org', 'https://*.maps.2gis.com'],
         'style-src': ["'self'", "'unsafe-inline'"],
         'upgrade-insecure-requests': config.cookieSecure ? [] : null,
       },

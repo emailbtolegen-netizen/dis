@@ -73,7 +73,7 @@ export default function ImportWizard() {
       {!info && (
         <Card size="small" style={{ maxWidth: 800 }}>
           <Upload.Dragger
-            accept=".xlsx,.xls,.xlsm,.csv"
+            accept=".xlsx,.xls,.xlsm,.csv,.html,.htm"
             showUploadList={false}
             disabled={busy}
             customRequest={async ({ file }) => {
@@ -95,7 +95,7 @@ export default function ImportWizard() {
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">Перетащите файл сюда или нажмите для выбора</p>
-            <p className="ant-upload-hint">.xlsx, .xls, .xlsm, .csv — до 25 МБ. Формулы и макросы не выполняются.</p>
+            <p className="ant-upload-hint">.xlsx, .xls, .xlsm, .csv, а также .html со встроенными данными (например, карта аварийных домов) — до 25 МБ. Формулы, макросы и скрипты не выполняются.</p>
           </Upload.Dragger>
         </Card>
       )}

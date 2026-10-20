@@ -22,10 +22,12 @@ export function dashboard(allowed: string[]) {
   const lastImport = get(`SELECT i.id, i.applied_at, s.file_name FROM imports i JOIN source_files s ON s.id = i.source_file_id WHERE i.status = 'applied' ORDER BY i.applied_at DESC LIMIT 1`) ?? null;
 
   // аварийность: показатель доступен, только если такой статус есть в данных
-  const emergencyRows = all(
+  // (SQLite меняет регистр только у латиницы — поэтому обе формы слова явно)
+  const byStatus = (stem: string) => get(
     `SELECT count(*) n FROM objects WHERE deleted_at IS NULL AND category IN (${inList(allowed)})
-       AND (lower(status) LIKE '%авар%' OR lower(attrs) LIKE '%авар%')`, ...allowed);
-  const emergencyCount = emergencyRows[0]?.n ?? 0;
+       AND (status LIKE ? OR status LIKE ?)`, ...allowed, `%${stem}%`, `%${stem[0].toUpperCase()}${stem.slice(1)}%`)!.n as number;
+  const emergencyCount = byStatus('аварийн');
+  const dilapidatedCount = byStatus('ветх');
 
   const res: any = {
     lastUpdate,
@@ -34,7 +36,7 @@ export function dashboard(allowed: string[]) {
       objects: total,
       incomplete: q.totals.incomplete,
       needsReview: q.totals.needsReview,
-      emergency: emergencyCount > 0 ? { available: true, count: emergencyCount } : { available: false, note: 'В исходных данных нет признака аварийности объектов' },
+      emergency: emergencyCount > 0 ? { available: true, count: emergencyCount, dilapidated: dilapidatedCount } : { available: false, note: 'В исходных данных нет признака аварийности объектов' },
     },
     domains,
     categories: [...cats.values()].filter((c) => allowed.includes(c.code)).map((c) => ({ code: c.code, name: c.name, short_name: c.short_name, domain: c.domain, count: count(c.code) })),

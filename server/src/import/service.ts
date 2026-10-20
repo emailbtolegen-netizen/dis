@@ -9,9 +9,9 @@ import { rebuildAutoLinks } from '../services/links.ts';
 import { diffData, insertObject, logChange, objectData, updateObject } from '../services/objects.ts';
 import { detectProfile, profileByCode, PROFILES } from './profiles/index.ts';
 import type { ParsedRecord, ParseResult } from './types.ts';
-import { cellText, readSheet, readWorkbook } from './workbook.ts';
+import { cellText, readHtmlWorkbook, readSheet, readWorkbook } from './workbook.ts';
 
-const ALLOWED_EXT = new Set(['.xlsx', '.xls', '.csv', '.xlsm']);
+const ALLOWED_EXT = new Set(['.xlsx', '.xls', '.csv', '.xlsm', '.html', '.htm']);
 
 export class ImportError extends Error {}
 
@@ -20,12 +20,13 @@ export class ImportError extends Error {}
 /** Сохранение загруженного файла (имя на диске — случайное, вне публичных каталогов). */
 export function storeSourceFile(buf: Buffer, originalName: string, userId: number | null): number {
   const ext = path.extname(originalName).toLowerCase();
-  if (!ALLOWED_EXT.has(ext)) throw new ImportError('Допустимы только файлы .xlsx, .xls, .xlsm, .csv');
+  if (!ALLOWED_EXT.has(ext)) throw new ImportError('Допустимы только файлы .xlsx, .xls, .xlsm, .csv, .html');
   // сигнатуры: xlsx/xlsm — ZIP (PK), xls — OLE2 (D0 CF 11 E0), csv — текст
   const sig = buf.subarray(0, 4).toString('hex');
   if ((ext === '.xlsx' || ext === '.xlsm') && !sig.startsWith('504b')) throw new ImportError('Файл не является книгой Excel (.xlsx)');
   if (ext === '.xls' && sig !== 'd0cf11e0' && !sig.startsWith('504b')) throw new ImportError('Файл не является книгой Excel (.xls)');
   if (ext === '.csv' && buf.subarray(0, 4096).includes(0)) throw new ImportError('CSV-файл содержит двоичные данные');
+  if ((ext === '.html' || ext === '.htm') && (buf.subarray(0, 65536).includes(0) || !/<html|<!doctype html|<table/i.test(buf.subarray(0, 4096).toString('utf8')))) throw new ImportError('Файл не является HTML-страницей');
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
   const stored = `${sha256.slice(0, 16)}-${crypto.randomBytes(6).toString('hex')}${ext}`;
   fs.writeFileSync(path.join(config.uploadsDir, stored), buf);
@@ -37,6 +38,13 @@ function loadWorkbook(sourceFileId: number) {
   const sf = get('SELECT * FROM source_files WHERE id = ?', sourceFileId);
   if (!sf) throw new ImportError('Файл не найден');
   const buf = fs.readFileSync(path.join(config.uploadsDir, sf.stored_name));
+  if (/\.html?$/i.test(sf.stored_name)) {
+    try {
+      return { sf, wb: readHtmlWorkbook(buf) };
+    } catch (e) {
+      throw new ImportError((e as Error).message);
+    }
+  }
   return { sf, wb: readWorkbook(buf) };
 }
 

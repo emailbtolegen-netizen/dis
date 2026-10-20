@@ -28,7 +28,7 @@ export default function Dashboard() {
               <Col xs={12} md={8} xl={4}><Kpi label="Требуют актуализации" value={fmtNum(d.totals.needsReview)} hint="есть замечания к данным" onClick={can('quality.view') ? () => nav('/quality') : undefined} /></Col>
               <Col xs={12} md={8} xl={4}>
                 {d.totals.emergency.available
-                  ? <Kpi label="Аварийных объектов" value={fmtNum(d.totals.emergency.count)} />
+                  ? <Kpi label="Аварийных домов" value={fmtNum(d.totals.emergency.count)} hint={d.totals.emergency.dilapidated ? `и ${d.totals.emergency.dilapidated} ветхих · на карте →` : 'на карте →'} onClick={() => nav('/map?category=mkd_emergency')} />
                   : <Kpi label="Аварийных объектов" value={<span className="muted" style={{ fontSize: 18 }}>нет данных</span>} hint={d.totals.emergency.note} />}
               </Col>
             </Row>

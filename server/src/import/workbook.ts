@@ -31,3 +31,39 @@ export function cellText(v: unknown): string {
 export function isEmptyRow(r: unknown[] | undefined): boolean {
   return !r || r.every((v) => v == null || String(v).trim() === '');
 }
+
+const decodeEntities = (s: string) => s.replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const htmlText = (s: string) => decodeEntities(s.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+
+/**
+ * Данные из HTML-страницы (например, самостоятельной карты): встроенные массивы вида
+ * `const ИМЯ = [{…}, …];` разбираются как JSON (код страницы НЕ выполняется), каждый массив — отдельный лист.
+ * Над шапкой листа — заголовок страницы и строки легенды (для документирования источника).
+ * Если массивов нет — читаются HTML-таблицы.
+ */
+export function readHtmlWorkbook(buf: Buffer): XLSX.WorkBook {
+  const html = buf.toString('utf8');
+  const title = htmlText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
+  const legend = [...(html.match(/<div class="legend">([\s\S]*?)<\/div>\s*<\/header>/i)?.[1] ?? '').matchAll(/<div>([\s\S]*?)<\/div>/g)].map((m) => htmlText(m[1])).filter(Boolean);
+  const wb = XLSX.utils.book_new();
+  for (const m of html.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(\[\s*\{[\s\S]*?\}\s*\])\s*;/g)) {
+    let data: unknown;
+    try {
+      data = JSON.parse(m[2]);
+    } catch {
+      continue; // не JSON (код) — пропускаем
+    }
+    if (!Array.isArray(data) || !data.length || !data.every((x) => x && typeof x === 'object' && !Array.isArray(x))) continue;
+    const keys = [...new Set((data as Record<string, unknown>[]).flatMap((o) => Object.keys(o)))];
+    const caption: unknown[][] = [[`Источник: HTML-страница «${title}», массив ${m[1]}`], ...legend.map((l) => [`Легенда: ${l}`]), []];
+    const rows = (data as Record<string, unknown>[]).map((o) => keys.map((k) => {
+      const v = o[k];
+      return v == null || typeof v !== 'object' ? v ?? null : JSON.stringify(v);
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...caption, keys, ...rows]), m[1].slice(0, 31));
+  }
+  if (wb.SheetNames.length) return wb;
+  const tables = XLSX.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false });
+  if (!tables.SheetNames.length) throw new Error('В HTML-файле не найдено ни встроенных данных, ни таблиц');
+  return tables;
+}
