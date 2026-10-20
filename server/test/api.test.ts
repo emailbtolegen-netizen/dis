@@ -330,6 +330,18 @@ test('карта аварийных домов (HTML): извлечение да
   assert.equal(map.points.filter((p: any) => p.category === 'mkd_emergency').length, 88);
   const d = (await admin.get('/dashboard')).body;
   assert.deepEqual([d.totals.emergency.available, d.totals.emergency.count, d.totals.emergency.dilapidated], [true, 68, 20]);
+  // тот же перечень в виде таблицы Excel (лист «тізім») обновляет те же записи, а не создаёт дубли
+  const xls = findSrc('АВАР 88');
+  if (xls) {
+    const rx = await importAll(xls);
+    assert.deepEqual(rx.map((x) => [x.profile, x.summary.total, x.summary.new, x.summary.invalid, x.summary.missing]), [['mkd_emergency', 88, 0, 0, 0]]);
+    assert.ok(rx[0].totals.length === 2 && rx[0].totals.every((t: any) => t.match === false && /строк выше/.test(t.note)), 'ошибочный итог «Барлығы» выявлен');
+    assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd_emergency' AND deleted_at IS NULL`), 88);
+    const st2 = Object.fromEntries(db.all(`SELECT status, count(*) n FROM objects WHERE category = 'mkd_emergency' GROUP BY status`).map((x) => [x.status, x.n]));
+    assert.deepEqual(st2, { 'Аварийный (признан, есть заключение)': 68, 'Ветхий (заключения нет или назначен капремонт)': 20 });
+    assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd_emergency' AND json_extract(attrs, '$.address_ru') IS NOT NULL`), 88, 'поля карты не затёрты');
+    assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd_emergency' AND json_extract(attrs, '$.conclusion') GLOB '[0-9][0-9][0-9][0-9]-*'`), 0, 'даты в формате дд.мм.гггг');
+  }
   // HTML без встроенных данных и таблиц — понятная ошибка, а не падение
   const fd = new FormData();
   fd.append('file', new Blob(['<!doctype html><html><body><script>alert(1)</script></body></html>']), 'empty.html');

@@ -13,7 +13,7 @@ export function readSheet(wb: XLSX.WorkBook, name: string): Sheet {
   if (!ref) return { name, rows: [], firstRow: 1 };
   const range = XLSX.utils.decode_range(ref);
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: true, defval: null, blankrows: true });
-  const trimmed = rows.map((r) => r.map((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v)));
+  const trimmed = rows.map((r) => r.map((v) => (v instanceof Date ? `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}` : v)));
   return { name, rows: trimmed, firstRow: range.s.r + 1 };
 }
 
