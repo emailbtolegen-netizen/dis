@@ -1,5 +1,5 @@
 import { EnvironmentOutlined } from '@ant-design/icons';
-import { Alert, Badge, Card, Checkbox, Empty, Grid, Input, Segmented, Select, Table } from 'antd';
+import { Alert, Badge, Card, Empty, Grid, Input, Segmented, Select } from 'antd';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -76,7 +76,20 @@ function popupHtml(p: Point, catName: string, show: (key: string, v: unknown) =>
   return div;
 }
 
-export default function MapPage() {
+/** Две отдельные карты: жилой фонд (дома реестра МЖД) и аварийные дома (перечень аварийных и ветхих домов). */
+const MODES = {
+  housing: {
+    category: 'mkd', title: 'Карта жилого фонда',
+    sub: 'Многоквартирные жилые дома реестра МЖД с координатами из карты жилого фонда г. Атырау. Цвет метки — период постройки.',
+  },
+  emergency: {
+    category: 'mkd_emergency', title: 'Карта аварийных домов',
+    sub: 'Аварийные и ветхие многоквартирные дома по карте аварийных домов г. Атырау.',
+  },
+} as const;
+
+export default function MapPage({ mode }: { mode: keyof typeof MODES }) {
+  const M = MODES[mode];
   const { data, error, loading } = useApi<{ points: Point[]; withoutCoords: { category: string; n: number }[] }>('/map');
   const { cat } = useSession();
   const nav = useNavigate();
@@ -90,7 +103,7 @@ export default function MapPage() {
 
   // точки с одинаковыми координатами немного разносятся, чтобы каждую можно было выбрать (только отображение)
   const points = useMemo(() => {
-    const src = (data?.points ?? []).map((p) => ({ ...p }));
+    const src = (data?.points ?? []).filter((p) => p.category === M.category).map((p) => ({ ...p }));
     const groups = new Map<string, Point[]>();
     for (const p of src) {
       const k = `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
@@ -107,13 +120,11 @@ export default function MapPage() {
       });
     }
     return src;
-  }, [data]);
-  const categories = useMemo(() => [...new Set(points.map((p) => p.category))], [points]);
+  }, [data, M.category]);
+  const selectedCats = useMemo(() => [M.category as string], [M.category]);
 
   // выбранные разделы (?category=a,b) — по умолчанию все; ?s — состояние, ?p — период постройки, ?l — лифты
-  const catParam = sp.get('category');
   const periodParam = sp.get('p');
-  const selectedCats = useMemo(() => (catParam ? catParam.split(',') : categories), [catParam, categories]);
   const statusFilter = sp.get('s') ?? 'all';
   const periodFilter = useMemo(() => (periodParam ? periodParam.split(',') : []), [periodParam]);
   const liftFilter = sp.get('l') ?? 'all';
@@ -234,25 +245,22 @@ export default function MapPage() {
     setTimeout(() => m.openPopup(), 650);
   };
 
-  const without = (data?.withoutCoords ?? []).reduce((s, r) => s + r.n, 0);
+  const without = (data?.withoutCoords ?? []).filter((r) => r.category === M.category).reduce((s, r) => s + r.n, 0);
   const hasEmergency = counts.red + counts.yellow > 0;
 
   return (
     <>
-      <PageTitle title="Карта объектов" sub="Объекты с достоверными координатами: дома МЖД — по карте жилого фонда, аварийные и ветхие дома — по карте аварийных домов г. Атырау." />
+      <PageTitle title={M.title} sub={M.sub} />
       <Loading error={error} loading={loading}>
         {data && !points.length && (
-          <Alert type="info" showIcon style={{ marginBottom: 12 }} message="В базе пока нет объектов с координатами"
-            description={`Координаты можно добавить в карточке объекта или импортировать из файла. Объектов без координат: ${without}.`} />
+          <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Данные для карты пока не загружены`}
+            description={mode === 'housing'
+              ? 'Загрузите файл карты жилого фонда (karta-zhilogo-fonda-atyrau.html) в разделе «Администрирование → Импорт Excel» — координаты будут добавлены к домам реестра МЖД.'
+              : 'Загрузите файл карты аварийных домов (karta-avariynyh-domov-atyrau.html) или таблицу «АВАР 88 үй.xlsx» в разделе «Администрирование → Импорт Excel».'} />
         )}
         {points.length > 0 && (
           <div style={{ display: 'flex', flexDirection: screens.lg ? 'row' : 'column-reverse', gap: 12, alignItems: 'stretch' }}>
             <Card size="small" style={{ width: screens.lg ? 340 : '100%', flex: 'none' }} styles={{ body: { display: 'flex', flexDirection: 'column', gap: 10, height: screens.lg ? 'calc(100vh - 190px)' : 'auto' } }}>
-              {categories.length > 1 && (
-                <Checkbox.Group value={selectedCats} onChange={(v) => setParam('category', (v as string[]).length === categories.length ? null : (v as string[]).join(',') || 'none')}
-                  style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
-                  options={categories.map((c) => ({ value: c, label: `${cat(c)?.short_name ?? c} (${points.filter((p) => p.category === c).length})` }))} />
-              )}
               {hasEmergency && (
                 <Segmented value={statusFilter} style={{ alignSelf: 'flex-start', maxWidth: '100%' }} onChange={(v) => setParam('s', v === 'all' ? null : String(v))}
                   options={[
@@ -292,17 +300,13 @@ export default function MapPage() {
                   );
                 }) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Ничего не найдено" />}
               </div>
-              <div className="muted" style={{ fontSize: 12 }}><EnvironmentOutlined /> Показано {visible.length} из {points.length}. Без координат: {without}.</div>
+              <div className="muted" style={{ fontSize: 12 }}><EnvironmentOutlined /> Показано {visible.length} из {points.length}.{without ? ` Без координат: ${without} (на карте не показаны).` : ''}</div>
             </Card>
             <Card size="small" style={{ flex: 1, minWidth: 0 }} styles={{ body: { padding: 0, height: screens.lg ? 'calc(100vh - 170px)' : '60vh' } }}>
               <div ref={el} style={{ height: '100%' }} />
             </Card>
           </div>
         )}
-        <Card size="small" title="Объекты без координат по разделам" style={{ marginTop: 12 }}>
-          <Table size="small" rowKey="category" pagination={false} dataSource={data?.withoutCoords ?? []}
-            columns={[{ title: 'Раздел', dataIndex: 'category', render: (c) => cat(c)?.name ?? c }, { title: 'Без координат', dataIndex: 'n', align: 'right' }]} />
-        </Card>
       </Loading>
     </>
   );

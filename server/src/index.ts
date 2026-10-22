@@ -4,8 +4,15 @@ import { bootstrap } from './bootstrap.ts';
 import { config } from './config.ts';
 import { closeDb, get, run, scalar } from './db/db.ts';
 import { scheduleBackups } from './services/backup.ts';
+import { repairMisdetectedImports } from './import/service.ts';
 
 bootstrap();
+try {
+  const fix = repairMisdetectedImports();
+  if (fix) console.log(`Отменены ошибочно распознанные импорты №${fix.imports.join(', ')}: удалено ${fix.deleted}, восстановлено ${fix.restored}, оставлено без изменений ${fix.kept.length}`);
+} catch (e) {
+  console.error('Не удалось проверить ошибочно распознанные импорты:', (e as Error).message);
+}
 scheduleBackups();
 
 /**

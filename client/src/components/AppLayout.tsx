@@ -1,5 +1,5 @@
 import {
-  AlertOutlined, AppstoreOutlined, MenuFoldOutlined, MenuUnfoldOutlined, NodeIndexOutlined, ApartmentOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
+  AlertOutlined, AppstoreOutlined, MenuFoldOutlined, MenuUnfoldOutlined, NodeIndexOutlined, ApartmentOutlined, WarningOutlined, AuditOutlined, BarChartOutlined, CloudUploadOutlined, DashboardOutlined, DatabaseOutlined,
   EnvironmentOutlined, HistoryOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, MenuOutlined, SafetyOutlined, SettingOutlined,
   TableOutlined, TeamOutlined, ThunderboltOutlined, ToolOutlined, UserOutlined,
 } from '@ant-design/icons';
@@ -39,7 +39,8 @@ function useMenuItems(): MenuProps['items'] {
     if (byDomain('other').length) items.push({ key: 'g-other', icon: <DatabaseOutlined />, label: 'Прочие объекты', children: byDomain('other').map(catItem) });
     items.push(
       { key: '/addresses', icon: <EnvironmentOutlined />, label: t('menu.addresses') },
-      { key: '/map', icon: <ApartmentOutlined />, label: t('menu.map') },
+      { key: '/map/housing', icon: <ApartmentOutlined />, label: 'Карта жилого фонда' },
+      { key: '/map/emergency', icon: <WarningOutlined />, label: 'Карта аварийных домов' },
     );
     if (can('quality.view')) items.push({ key: '/quality', icon: <AlertOutlined />, label: t('menu.quality') });
     const admin: NonNullable<MenuProps['items']> = [];

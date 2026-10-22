@@ -1,5 +1,5 @@
 import { Spin } from 'antd';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import { useSession } from './lib/session';
 import AddressCard from './pages/AddressCard';
@@ -56,7 +56,9 @@ export default function App() {
           <Route path="addresses" element={<Addresses />} />
           <Route path="addresses/:id" element={<AddressCard />} />
           <Route path="search" element={<SearchPage />} />
-          <Route path="map" element={<MapPage />} />
+          <Route path="map/housing" element={<MapPage key="housing" mode="housing" />} />
+          <Route path="map/emergency" element={<MapPage key="emergency" mode="emergency" />} />
+          <Route path="map" element={<MapRedirect />} />
           <Route path="quality" element={<Guard perm="quality.view"><Quality /></Guard>} />
           <Route path="account/password" element={<ChangePassword />} />
           <Route path="admin/import" element={<Guard perm="import.manage"><ImportWizard /></Guard>} />
@@ -74,4 +76,10 @@ export default function App() {
       )}
     </Routes>
   );
+}
+
+/** Старые ссылки /map?category=… ведут на соответствующую карту. */
+function MapRedirect() {
+  const [sp] = useSearchParams();
+  return <Navigate replace to={sp.get('category') === 'mkd_emergency' ? '/map/emergency' : '/map/housing'} />;
 }

@@ -265,3 +265,66 @@ export function discardImport(importId: number) {
     run(`UPDATE imports SET status = 'discarded' WHERE id = ?`, importId);
   });
 }
+
+// ─────────────────────────── Исправление ошибочно распознанных импортов ───────────────────────────
+
+/**
+ * Карта жилого фонда (HTML) в версии до 22.10.2026 распознавалась как перечень аварийных домов:
+ * в раздел «Аварийные дома» попадали все дома реестра, а у настоящих аварийных домов затирался статус.
+ * При запуске такие импорты находятся повторным распознаванием сохранённого исходного файла и отменяются:
+ * созданные ими записи удаляются (мягко), изменённые — возвращаются к состоянию до первого такого импорта.
+ * Записи, изменённые после этого вручную или другим импортом, не затрагиваются.
+ */
+export function repairMisdetectedImports(): { imports: number[]; deleted: number; restored: number; kept: string[] } | null {
+  const bad: number[] = [];
+  for (const imp of all(`SELECT id, source_file_id, sheet_name FROM imports WHERE profile = 'mkd_emergency' AND status = 'applied' ORDER BY id`)) {
+    try {
+      const { wb } = loadWorkbook(imp.source_file_id);
+      const now = detectProfile(readSheet(wb, imp.sheet_name)).code;
+      if (now !== 'mkd_emergency' && now !== 'generic') bad.push(imp.id);
+    } catch {
+      // исходный файл недоступен — импорт не трогаем
+    }
+  }
+  if (!bad.length) return null;
+  const backupName = createBackup('before-repair-misdetected');
+  const stamp = nowIso();
+  const report = { imports: bad, deleted: 0, restored: 0, kept: [] as string[], backupName };
+  const inBad = `(${bad.map(() => '?').join(',')})`;
+  tx(() => {
+    const rows = all(`SELECT * FROM import_rows WHERE import_id IN ${inBad} AND applied = 1 ORDER BY import_id, id`, ...bad);
+    const done = new Set<number>();
+    for (const r of rows) {
+      if (done.has(r.object_id)) continue; // состояние «до» — из самого раннего ошибочного импорта
+      done.add(r.object_id);
+      const obj = get('SELECT * FROM objects WHERE id = ?', r.object_id);
+      if (!obj || obj.deleted_at) continue;
+      // запись с тех пор подтверждена/изменена другим импортом или вручную — оставляем
+      if (!bad.includes(obj.source_import_id) || obj.updated_via === 'manual') {
+        report.kept.push(`${obj.uid} «${obj.name}»`);
+        continue;
+      }
+      const reason = `Отмена ошибочного импорта №${r.import_id}: карта жилого фонда была распознана как перечень аварийных домов`;
+      if (r.action === 'new') {
+        run('UPDATE objects SET deleted_at = ?, deleted_by = NULL, delete_reason = ? WHERE id = ?', stamp, reason, obj.id);
+        logChange(obj.id, 'rollback', [], null, { importId: r.import_id, at: stamp, reason });
+        report.deleted++;
+      } else {
+        const before = json<any>(r.before, null);
+        if (!before) continue;
+        const added = Object.keys(json<Record<string, unknown>>(obj.attrs, {})).filter((k) => !(k in (before.attrs ?? {})));
+        const changes = updateObject(obj.id, { core: before.core, attrs: { ...Object.fromEntries(added.map((k) => [k, null])), ...before.attrs } }, null, {
+          via: 'rollback', stamp, raw: before.raw, issues: before.issues, source: before.source,
+        });
+        logChange(obj.id, 'rollback', changes, null, { importId: r.import_id, at: stamp, reason });
+        report.restored++;
+      }
+    }
+    for (const id of bad) {
+      run(`UPDATE imports SET status = 'rolled_back', rolled_back_at = ?, rollback_report = ? WHERE id = ?`, stamp, JSON.stringify({ ...report, auto: true }), id);
+    }
+    run(`INSERT INTO audit_log(user_login, action, entity, entity_id, details) VALUES('system', 'import.repair', 'import', ?, ?)`, bad.join(','), JSON.stringify(report));
+  });
+  rebuildAutoLinks();
+  return report;
+}
