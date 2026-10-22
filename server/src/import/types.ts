@@ -69,6 +69,8 @@ export interface GenericOptions {
 export interface Profile {
   code: string;
   name: string;
+  /** Профиль только дополняет существующие записи указанными полями: не создаёт записи и не меняет их источник, исходную строку и замечания. */
+  enrich?: boolean;
   detect(sheet: Sheet): boolean;
   parse(sheet: Sheet, options?: any): ParseResult;
 }

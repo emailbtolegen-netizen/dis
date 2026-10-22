@@ -284,7 +284,7 @@ async function importAll(file: string) {
     const pv = await admin.post('/admin/imports/preview', { sourceFileId: up.body.sourceFile.id, sheet: sh.name, profile: sh.detected.code });
     const imp = (await admin.get(`/admin/imports/${pv.body.id}`)).body;
     await admin.post(`/admin/imports/${pv.body.id}/apply`);
-    out.push({ sheet: sh.name, profile: sh.detected.code, summary: imp.summary, totals: imp.control_totals });
+    out.push({ id: pv.body.id, sheet: sh.name, profile: sh.detected.code, summary: imp.summary, totals: imp.control_totals });
   }
   return out;
 }
@@ -316,6 +316,32 @@ test('дворы, капремонт 2026, насаждения, дороги: �
   // повторный импорт тех же файлов — без дубликатов
   const again = await importAll(NEW_FILES.yards150!);
   assert.ok(again.every((r) => r.summary.new === 0 && r.summary.missing === 0 && r.summary.unchanged === r.summary.total));
+});
+
+test('карта жилого фонда (HTML): координаты домов реестра МЖД без новых записей и без перезаписи реестра; откат', { skip: !haveFiles || !findSrc('karta-zhilogo-fonda') }, async () => {
+  const snap = () => db.all(`SELECT uid, natural_key, attrs, raw, issues, source_import_id, year_built FROM objects WHERE category = 'mkd' AND deleted_at IS NULL ORDER BY id`)
+    .map((o) => ({ ...o, attrs: JSON.parse(o.attrs) }));
+  const before = snap();
+  const r = await importAll(findSrc('karta-zhilogo-fonda')!);
+  assert.deepEqual(r.map((x) => [x.sheet, x.profile, x.summary.total, x.summary.new, x.summary.changed, x.summary.unchanged, x.summary.invalid, x.summary.missing]),
+    [['HOUSES', 'mkd_geo', 1239, 0, 1187, 52, 0, 0]], 'лист NOLIFT не импортируется автоматически');
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), 1239);
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND lat IS NOT NULL AND lon IS NOT NULL`), 1187);
+  const after = snap();
+  // реестр не изменён: ключи, исходная строка, замечания, источник и характеристики — прежние; добавлен только источник координат
+  assert.deepEqual(after.map((o) => { const { coord_source, ...a } = o.attrs; return { ...o, attrs: a }; }), before);
+  const map = (await admin.get('/map')).body;
+  assert.equal(map.points.filter((p: any) => p.category === 'mkd').length, 1187);
+  assert.ok(map.points.some((p: any) => p.category === 'mkd' && p.lifts?.n > 0), 'лифты из реестра лифтов в карточке дома на карте');
+  // повторная загрузка — без изменений
+  const again = await importAll(findSrc('karta-zhilogo-fonda')!);
+  assert.equal(again[0].summary.changed, 0);
+  const rb = await admin.post(`/admin/imports/${r[0].id}/rollback`);
+  assert.equal(rb.status, 200);
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND lat IS NOT NULL`), 0, 'откат убирает координаты');
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND json_extract(attrs, '$.coord_source') IS NOT NULL`), 0);
+  assert.deepEqual(snap().map((o) => { const { coord_source, ...a } = o.attrs; return { ...o, attrs: a }; }), before);
+  await importAll(findSrc('karta-zhilogo-fonda')!);
 });
 
 test('карта аварийных домов (HTML): извлечение данных без выполнения скриптов, статусы, координаты, карта, главная панель', { skip: !haveFiles || !findSrc('karta-avariynyh') }, async () => {

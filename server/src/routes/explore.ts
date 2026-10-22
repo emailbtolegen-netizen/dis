@@ -142,7 +142,19 @@ exploreRouter.get('/map', (req, res) => {
   // для всплывающей карточки — неконфиденциальные поля категории
   const conf = req.user!.permissions.includes('objects.confidential');
   const cats = categories();
+  // лифты, привязанные к дому (реестр лифтов): количество и сколько с неработающими лифтами
+  const lifts = new Map<string, { n: number; bad: number }>();
+  if (allowed.includes('mkd_lifts')) {
+    for (const r of all(`SELECT m.uid, l.status FROM object_links k JOIN objects l ON l.id = k.from_id JOIN objects m ON m.id = k.to_id
+                          WHERE k.relation = 'lift_building' AND k.status != 'rejected' AND l.deleted_at IS NULL`)) {
+      const s = lifts.get(r.uid) ?? { n: 0, bad: 0 };
+      s.n++;
+      if (/не работа/i.test(r.status ?? '')) s.bad++;
+      lifts.set(r.uid, s);
+    }
+  }
   for (const p of points) {
+    if (lifts.has(p.uid)) p.lifts = lifts.get(p.uid);
     const attrs = JSON.parse(p.attrs || '{}');
     const cat = cats.get(p.category);
     if (!conf) for (const f of cat?.fields ?? []) if (f.confidential) delete attrs[f.key];

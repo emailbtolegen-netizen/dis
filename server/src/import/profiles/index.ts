@@ -6,11 +6,12 @@ import { greenProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignPr
 import { repairProfile, roadsProfile } from './repair.ts';
 import { liftsProfile } from './lifts.ts';
 import { mkdProfile } from './mkd.ts';
+import { mkdGeoProfile } from './mkdGeo.ts';
 import { thermoProfile } from './thermo.ts';
 
 /** Профили в порядке проверки; generic — последний (подходит для любой таблицы). */
 export const PROFILES: Profile[] = [
-  mkdProfile, energyProfile, thermoProfile, liftsProfile, repairProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignProfile, greenProfile, roadsProfile, emergencyProfile,
+  mkdProfile, energyProfile, thermoProfile, liftsProfile, repairProfile, yardContractsProfile, yardsApprovedProfile, yardsDesignProfile, greenProfile, roadsProfile, emergencyProfile, mkdGeoProfile,
   genericProfile,
 ];
 

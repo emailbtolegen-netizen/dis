@@ -132,7 +132,9 @@ export const SYSTEM_CATEGORIES: CategoryDef[] = [
       { key: 'col_r', label: 'Столбец R (без заголовка)', type: 'text', source: '(столбец R без заголовка)', hint: 'Значение без заголовка в исходном файле — требует уточнения' },
       core('status', { filter: true }),
       core('balance_holder'),
-      core('lat'), core('lon'), core('notes'),
+      core('lat'), core('lon'),
+      { key: 'coord_source', label: 'Источник координат', type: 'text', hint: 'Откуда взяты координаты дома' },
+      core('notes'),
     ],
   },
   {

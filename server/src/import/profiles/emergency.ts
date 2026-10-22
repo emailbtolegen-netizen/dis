@@ -35,7 +35,7 @@ type Layout = { kind: 'html' | 'excel'; h: number; col: Record<string, number>; 
 function detectLayout(sheet: Sheet): Layout | null {
   for (let i = 0; i < Math.min(sheet.rows.length, 30); i++) {
     const f = (sheet.rows[i] ?? []).map((v) => fold(v));
-    if (f.includes('addr') && f.includes('lat') && f.includes('lon')) {
+    if (f.includes('addr') && f.includes('status') && f.includes('lat') && f.includes('lon')) {
       const col: Record<string, number> = {};
       f.forEach((k, c) => { if (k) col[k] = c; });
       return { kind: 'html', h: i, col, dataStart: i + 1 };

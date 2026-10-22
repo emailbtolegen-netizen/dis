@@ -126,7 +126,8 @@ export function createPreview(sourceFileId: number, sheetName: string, profileCo
       const cur = objectData(obj);
       const diff = diffData(category(r.category), cur, { core: r.core, attrs: r.attrs });
       const before = { ...cur, raw: json(obj.raw, null), issues: json(obj.issues, []), source: { fileId: obj.source_file_id, sheet: obj.source_sheet, row: obj.source_row, importId: obj.source_import_id }, updated_at: obj.updated_at };
-      const manual = obj.updated_via === 'manual';
+      // для профиля-дополнения правка вручную мешает, только если меняются уже заполненные поля
+      const manual = obj.updated_via === 'manual' && (!profile.enrich || diff.some((d) => d.old != null));
       if (diff.length) {
         if (manual) r.messages.push({ level: 'warning', text: 'Запись изменялась вручную через сайт после последнего импорта. Применение перезапишет поля, указанные в различиях.' });
         insertRow(r, 'changed', { objectId: obj.id, before, diff, manual, decision: manual ? 'skip' : 'apply' });
@@ -170,6 +171,7 @@ export function applyImport(importId: number, userId: number | null) {
   const stamp = nowIso();
   const report = { created: 0, updated: 0, refreshed: 0, skipped: 0, conflicts: [] as string[] };
 
+  const enrich = !!profileByCode(imp.profile)?.enrich;
   tx(() => {
     const rows = all(`SELECT * FROM import_rows WHERE import_id = ? AND action IN ('new','changed','unchanged') ORDER BY id`, importId);
     for (const r of rows) {
@@ -178,6 +180,7 @@ export function applyImport(importId: number, userId: number | null) {
       const messages = json<any[]>(r.messages, []).filter((m) => !/вручную через сайт/.test(m.text));
       const source = { fileId: imp.source_file_id, sheet: imp.sheet_name, row: r.row_no, importId };
       if (r.action === 'new') {
+        if (enrich) { report.skipped++; continue; }
         const { id } = insertObject({ category: r.category, core: data.core, attrs: data.attrs, raw: data.raw, issues: messages, naturalKey: r.natural_key, source }, userId, 'import', stamp);
         logChange(id, 'import_create', [], userId, { importId, at: stamp, reason: `Импорт №${importId}` });
         run('UPDATE import_rows SET object_id = ?, applied = 1 WHERE id = ?', id, r.id);
@@ -192,10 +195,13 @@ export function applyImport(importId: number, userId: number | null) {
         continue;
       }
       if (r.action === 'changed') {
-        const changes = updateObject(obj.id, { core: data.core, attrs: data.attrs }, userId, { via: 'import', stamp, raw: data.raw, issues: messages, naturalKey: r.natural_key, source });
+        const changes = enrich
+          ? updateObject(obj.id, { core: data.core, attrs: data.attrs }, userId, { via: 'import', stamp })
+          : updateObject(obj.id, { core: data.core, attrs: data.attrs }, userId, { via: 'import', stamp, raw: data.raw, issues: messages, naturalKey: r.natural_key, source });
         logChange(obj.id, 'import_update', changes, userId, { importId, at: stamp, reason: `Импорт №${importId}` });
         report.updated++;
       } else {
+        if (enrich) { report.skipped++; continue; }
         updateObject(obj.id, { core: {}, attrs: {} }, userId, { via: 'import', stamp, raw: data.raw, issues: messages, source });
         report.refreshed++;
       }
@@ -222,7 +228,7 @@ export function rollbackImport(importId: number, userId: number | null) {
     for (const r of rows) {
       const obj = get('SELECT * FROM objects WHERE id = ?', r.object_id);
       if (!obj || obj.deleted_at) continue;
-      const untouched = obj.source_import_id === importId && obj.updated_at === imp.applied_at;
+      const untouched = (obj.source_import_id === importId || !!profileByCode(imp.profile)?.enrich) && obj.updated_at === imp.applied_at;
       if (!untouched) {
         report.conflicts.push(`${obj.uid} «${obj.name}» изменён после импорта — оставлен без изменений`);
         continue;
@@ -234,7 +240,10 @@ export function rollbackImport(importId: number, userId: number | null) {
       } else {
         const before = json<any>(r.before, null);
         if (!before) continue;
-        const changes = updateObject(obj.id, { core: before.core, attrs: before.attrs }, userId, {
+        // поля, добавленные импортом (их не было до него), очищаются
+        const added = Object.keys(json<Record<string, unknown>>(obj.attrs, {})).filter((k) => !(k in (before.attrs ?? {})));
+        const attrs = { ...Object.fromEntries(added.map((k) => [k, null])), ...before.attrs };
+        const changes = updateObject(obj.id, { core: before.core, attrs }, userId, {
           via: 'rollback', stamp, raw: before.raw, issues: before.issues, source: before.source,
         });
         if (changes.length) logChange(obj.id, 'rollback', changes, userId, { importId, at: stamp, reason: `Откат импорта №${importId}` });
