@@ -94,7 +94,7 @@ export default function MapPage() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
-  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
+  const markersRef = useRef<Map<string, L.Marker | L.CircleMarker>>(new Map());
 
   const show = useMemo(() => (key: string, v: unknown) => {
     if (v == null || v === '') return '';
@@ -206,8 +206,13 @@ export default function MapPage() {
         r.appendChild(document.createTextNode(text));
       };
       for (const x of PERIODS) row({ background: x.fill }, x.label);
-      row({ background: RED, border: '2px solid #fff', boxShadow: '0 0 0 1px #999' }, 'аварийный — есть заключение');
-      row({ background: YELLOW, border: '2px solid #fff', boxShadow: '0 0 0 1px #999' }, 'ветхий — заключения нет или к капремонту');
+      const pin = (cls: string, text: string) => {
+        const r = L.DomUtil.create('div', '', d);
+        L.DomUtil.create('span', `lpin ${cls}`, r);
+        r.appendChild(document.createTextNode(text));
+      };
+      pin('red', 'аварийный — есть заключение');
+      pin('yellow', 'ветхий — заключения нет или к капремонту');
       row({ background: '#fff', border: `3px solid ${RING}` }, 'красное кольцо — есть неработающие лифты');
       return d;
     };
@@ -231,12 +236,17 @@ export default function MapPage() {
     markersRef.current.clear();
     const ordered = [...visible].sort((a, b) => Number(a.red || a.yellow) - Number(b.red || b.yellow));
     for (const h of ordered) {
-      const em = h.red || h.yellow;
-      const fill = h.red ? RED : h.yellow ? YELLOW : PERIODS.find((x) => x.key === h.period)!.fill;
-      const m = L.circleMarker([h.lat, h.lon], {
-        radius: em ? 8 : 6, fillColor: fill, fillOpacity: 0.95,
-        color: h.liftsBad ? RING : '#ffffff', weight: h.liftsBad ? 3 : em ? 2 : 1,
-      });
+      // аварийные и ветхие — метка-флажок поверх точек (как в исходной карте), остальные — точка цвета периода
+      const m = h.red || h.yellow
+        ? L.marker([h.lat, h.lon], {
+          zIndexOffset: 1000,
+          icon: L.divIcon({ className: '', iconSize: [20, 20], iconAnchor: [10, 24], popupAnchor: [0, -22], tooltipAnchor: [0, -20],
+            html: `<div class="pin ${h.red ? 'red' : 'yellow'}${h.liftsBad ? ' liftbad' : ''}"></div>` }),
+        })
+        : L.circleMarker([h.lat, h.lon], {
+          radius: 6, fillColor: PERIODS.find((x) => x.key === h.period)!.fill, fillOpacity: 0.95,
+          color: h.liftsBad ? RING : '#ffffff', weight: h.liftsBad ? 3 : 1,
+        });
       m.bindPopup(() => popupHtml(h, show, (uid) => nav(`/objects/${uid}`)));
       m.bindTooltip(h.addr, { direction: 'top', offset: [0, -6] });
       layer.addLayer(m);
@@ -300,7 +310,9 @@ export default function MapPage() {
                   const e = h.em?.attrs;
                   return (
                     <div key={h.key} className="map-list-item" onClick={() => focus(h)} role="button" tabIndex={0} onKeyDown={(ev) => { if (ev.key === 'Enter') focus(h); }}>
-                      <span className="dot" style={{ background: fill, boxShadow: h.liftsBad ? `0 0 0 2px ${RING}` : undefined }} />
+                      {h.red || h.yellow
+                        ? <span className={`lpin ${h.red ? 'red' : 'yellow'}`} style={{ marginTop: 4 }} />
+                        : <span className="dot" style={{ background: fill, boxShadow: h.liftsBad ? `0 0 0 2px ${RING}` : undefined }} />}
                       <div style={{ minWidth: 0 }}>
                         <div className="t">{h.addr}</div>
                         <div className="muted" style={{ fontSize: 12 }}>
