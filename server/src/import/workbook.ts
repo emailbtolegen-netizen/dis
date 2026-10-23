@@ -61,6 +61,22 @@ export function readHtmlWorkbook(buf: Buffer): XLSX.WorkBook {
       return v == null || typeof v !== 'object' ? v ?? null : JSON.stringify(v);
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...caption, keys, ...rows]), m[1].slice(0, 31));
+    // вложенные записи (например, HOUSES[].avar — сведения из списка аварийных домов) — отдельным листом
+    // «МАССИВ.поле» с указанием дома, к которому они относятся
+    for (const k of keys) {
+      const nested = (data as Record<string, any>[]).map((o) => {
+        let v = o[k];
+        if (typeof v === 'string' && v.startsWith('{')) try { v = JSON.parse(v); } catch { /* не объект */ }
+        return v && typeof v === 'object' && !Array.isArray(v) ? { parent: o, v } : null;
+      }).filter((x): x is { parent: Record<string, any>; v: Record<string, unknown> } => !!x);
+      if (!nested.length) continue;
+      const nk = [...new Set(nested.flatMap((x) => Object.keys(x.v)))];
+      const ctx = ['n', 'addr', 'lat', 'lon'].filter((c) => keys.includes(c));
+      const head = [...nk, ...ctx.map((c) => `house_${c}`)];
+      const body = nested.map((x) => [...nk.map((c) => { const v = x.v[c]; return v == null || typeof v !== 'object' ? v ?? null : JSON.stringify(v); }), ...ctx.map((c) => x.parent[c] ?? null)]);
+      const cap: unknown[][] = [[`Источник: HTML-страница «${title}», массив ${m[1]}, вложенное поле «${k}»`], ...legend.map((l) => [`Легенда: ${l}`]), []];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...cap, head, ...body]), `${m[1]}.${k}`.slice(0, 31));
+    }
   }
   if (wb.SheetNames.length) return wb;
   const tables = XLSX.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false });

@@ -53,20 +53,25 @@ export const mkdGeoProfile: Profile = {
       push(loose, looseBuildingKey(o.address_raw), o);
     }
 
-    type Row = { rowNo: number; row: unknown[]; addr: string; n: string | null; year: number | null; area: number | null; flats: number | null; floors: number | null; wall: string | null; lat: number | null; lon: number | null; cands: Mkd[]; how: string };
+    type Row = { rowNo: number; row: unknown[]; addr: string; alt: number[] | null; n: string | null; year: number | null; area: number | null; flats: number | null; floors: number | null; wall: string | null; lat: number | null; lon: number | null; cands: Mkd[]; how: string };
     const rows: Row[] = [];
+    let onlyAvar = 0;
     for (let i = h + 1; i < sheet.rows.length; i++) {
       const row = sheet.rows[i] ?? [];
       if (isEmptyRow(row)) continue;
       const v = (k: string) => (col(k) >= 0 ? row[col(k)] : null);
       const addr = str(v('addr'));
       if (!addr) { fileIssues.push({ level: 'warning', text: `Строка ${sheet.firstRow + i}: нет адреса — пропущена` }); continue; }
+      // дома, которых нет в таблице ЖКХ, а есть только в списке аварийных, — загружаются в раздел «Аварийные дома» (лист HOUSES.avar)
+      if (v('only_avar') === true || String(v('only_avar')) === 'true') { onlyAvar++; continue; }
+      let alt: number[] | null = null;
+      try { const z = v('zhkh_ll'); const a = typeof z === 'string' ? JSON.parse(z) : null; if (Array.isArray(a) && a.length >= 2) alt = a.map(Number); } catch { /* нет */ }
       const k1 = parseAddress(addr).buildingKey;
       const k2 = looseBuildingKey(addr);
       const byExact = (k1 && exact.get(k1)) || [];
       const cands = byExact.length ? byExact : (k2 && loose.get(k2)) || [];
       rows.push({
-        rowNo: sheet.firstRow + i, row, addr, n: v('n') == null ? null : cellText(v('n')),
+        rowNo: sheet.firstRow + i, row, addr, alt, n: v('n') == null ? null : cellText(v('n')),
         year: parseNumber(v('year')), area: parseNumber(v('area')), flats: parseNumber(v('flats')), floors: parseNumber(v('floors')), wall: str(v('wall')),
         lat: parseNumber(v('lat')), lon: parseNumber(v('lon')), cands, how: byExact.length ? 'адрес' : 'адрес (нестрогое совпадение)',
       });
@@ -121,6 +126,10 @@ export const mkdGeoProfile: Profile = {
         if (same > 1) messages.push({ level: 'info', field: 'lat', text: `Те же координаты указаны ещё у ${same - 1} дом(ов) — вероятно, точка квартала, а не дома` });
         Object.assign(core, { lat: r.lat, lon: r.lon });
         attrs.coord_source = SOURCE;
+        if (r.alt) {
+          attrs.coord_source = `${SOURCE}: точка из списка аварийных домов`;
+          messages.push({ level: 'info', field: 'lat', text: `Координаты взяты из списка аварийных домов. В таблице ЖКХ у дома другая точка (${r.alt[0]}, ${r.alt[1]})${r.alt[2] ? `, в ${Math.round(r.alt[2])} м` : ''} — проверьте` });
+        }
       }
       records.push({ rowNo: r.rowNo, category: 'mkd', baseKey: o.natural_key, naturalKey: o.natural_key, core, attrs, raw, messages, valid: true });
     });
@@ -128,6 +137,7 @@ export const mkdGeoProfile: Profile = {
     const matched = records.filter((r) => r.valid).length;
     fileIssues.push({ level: 'info', text: `Из файла переносятся только координаты домов: остальные сведения карты (год, площадь, квартиры, стены, отопление, лифты, управление) — копия реестра МЖД и реестра лифтов, они уже есть в системе и не перезаписываются.` });
     fileIssues.push({ level: 'info', text: `Домов на карте: ${rows.length}; найдено в реестре МЖД: ${matched} из ${mkd.length}; с координатами: ${matched - noCoords}; без координат: ${noCoords}; расходятся с реестром по характеристикам: ${mismatched}; не найдено: ${rows.length - matched}.` });
+    if (onlyAvar) fileIssues.push({ level: 'info', text: `${onlyAvar} домов есть только в списке аварийных (нет в таблице ЖКХ) — они загружаются в раздел «Аварийные дома» с листа «HOUSES.avar».` });
     return { profile: 'mkd_geo', profileName: this.name, sheet: sheet.name, records, fileIssues, controlTotals: [] };
   },
 };

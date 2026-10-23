@@ -5,6 +5,7 @@
  *     (№ | Мекен жайы | Салынған жылы | Пәтер саны | Қабаттылығы | Ауданы | Ескерме | координаты).
  * Ключ записи — нормализованный адрес, поэтому оба файла обновляют одни и те же записи (без дублей).
  */
+import { all } from '../../db/db.ts';
 import { looseBuildingKey } from '../../domain/addressMatch.ts';
 import { fold, parseNumber } from '../../domain/normalize.ts';
 import type { ControlTotal, Msg, ParsedRecord, ParseResult, Profile, Sheet } from '../types.ts';
@@ -32,9 +33,12 @@ const isoToRu = (s: string) => s.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3.$2.$1'
 
 type Layout = { kind: 'html' | 'excel'; h: number; col: Record<string, number>; dataStart: number };
 
+/** Имена полей во вложенном списке аварийных домов карты жилого фонда (HOUSES[].avar). */
+const NESTED: Record<string, string> = { an: 'n', aaddr: 'addr', ayear: 'year', aflats: 'flats', afloors: 'floors', aarea: 'area', anote: 'note', alat: 'lat', alon: 'lon' };
+
 function detectLayout(sheet: Sheet): Layout | null {
   for (let i = 0; i < Math.min(sheet.rows.length, 30); i++) {
-    const f = (sheet.rows[i] ?? []).map((v) => fold(v));
+    const f = (sheet.rows[i] ?? []).map((v) => { const k = fold(v); return NESTED[k] ?? k; });
     if (f.includes('addr') && f.includes('status') && f.includes('lat') && f.includes('lon')) {
       const col: Record<string, number> = {};
       f.forEach((k, c) => { if (k) col[k] = c; });
@@ -79,6 +83,9 @@ export const emergencyProfile: Profile = {
     const labels = headerLabels(L.kind === 'excel' ? headerCells : sheet.rows[L.h], width);
     const records: ParsedRecord[] = [];
     let derived = 0;
+    const existing = new Set(L.col.house_lat != null
+      ? all<{ k: string }>(`SELECT natural_key k FROM objects WHERE category = 'mkd_emergency' AND deleted_at IS NULL AND natural_key IS NOT NULL`).map((r) => r.k)
+      : []);
 
     for (let i = L.dataStart; i < sheet.rows.length; i++) {
       const row = sheet.rows[i] ?? [];
@@ -124,6 +131,12 @@ export const emergencyProfile: Profile = {
       if (L.kind === 'html') {
         lat = parseNumber(v('lat'));
         lon = parseNumber(v('lon'));
+        // в списке аварийных нет координат — точка этого же дома из таблицы ЖКХ (карта жилого фонда)
+        if ((lat == null || lon == null) && parseNumber(v('house_lat')) != null && parseNumber(v('house_lon')) != null) {
+          lat = parseNumber(v('house_lat'));
+          lon = parseNumber(v('house_lon'));
+          messages.push({ level: 'info', field: 'lat', text: `В списке аварийных домов координат нет — взята точка этого дома из таблицы ЖКХ («${str(v('house_addr')) ?? ''}»)` });
+        }
       } else {
         const c = cellText(v('coords')).match(/(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)/);
         if (c) { lat = Number(c[1]); lon = Number(c[2]); }
@@ -139,21 +152,27 @@ export const emergencyProfile: Profile = {
         area_m2: parseNumber(v('area')),
         no_in_list: v('n') == null ? null : cellText(v('n')),
       };
-      // поля, которые есть только в данных карты, — без перезаписи при загрузке таблицы
+      // поля, которые есть только в данных карты: записываются, только если столбец есть в файле, — иначе прежние значения сохраняются
       if (L.kind === 'html') {
+        const has = (k: string) => L.col[k] != null;
         const streetRu = str(v('street_ru'));
         const house = str(v('house'));
-        Object.assign(attrs, {
-          address_ru: streetRu && house ? `${streetRu}, ${house}` : null,
-          coord_source: str(v('acc')), map_status: statusRaw, street_kz: str(v('street_kz')), street_ru: streetRu, house,
-        });
+        if (has('street_ru') && has('house')) Object.assign(attrs, { address_ru: streetRu && house ? `${streetRu}, ${house}` : null, street_ru: streetRu, house });
+        if (has('street_kz')) attrs.street_kz = str(v('street_kz'));
+        if (has('status')) attrs.map_status = statusRaw;
+        if (has('acc')) attrs.coord_source = str(v('acc'));
+        else if (has('house_lat') && parseNumber(v('lat')) == null && lat != null) attrs.coord_source = 'Таблица ЖКХ (карта жилого фонда): в списке аварийных координат нет';
       }
       const shortStatus = status === EMERGENCY ? 'Аварийный' : status === DILAPIDATED ? 'Ветхий' : 'Дом';
       const key = looseBuildingKey(addr) ?? fold(addr).replace(/[\s,.]+/g, ' ').trim();
       const baseKey = `mkd_emergency:${key}`;
       records.push({
         rowNo, category: 'mkd_emergency', baseKey, naturalKey: baseKey,
-        core: { name: `${shortStatus}: ${(attrs.address_ru as string) ?? addr}`, address_raw: addr, status, year_built: parseNumber(v('year')), lat, lon },
+        core: {
+          // во вложенном списке нет русского адреса — наименование уже загруженной записи не меняем
+          ...(L.col.house_lat != null && existing.has(baseKey) ? {} : { name: `${shortStatus}: ${(attrs.address_ru as string) ?? addr}` }),
+          address_raw: addr, status, year_built: parseNumber(v('year')), lat, lon,
+        },
         attrs, raw: rawRow(labels, row), messages, valid: true,
       });
     }

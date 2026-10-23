@@ -318,11 +318,11 @@ test('дворы, капремонт 2026, насаждения, дороги: �
   assert.ok(again.every((r) => r.summary.new === 0 && r.summary.missing === 0 && r.summary.unchanged === r.summary.total));
 });
 
-test('карта жилого фонда (HTML): координаты домов реестра МЖД без новых записей и без перезаписи реестра; откат', { skip: !haveFiles || !findSrc('karta-zhilogo-fonda') }, async () => {
+test('карта жилого фонда (HTML): координаты домов реестра МЖД без новых записей и без перезаписи реестра; откат', { skip: !haveFiles || !findSrc('karta-zhilogo-fonda-atyrau.html') }, async () => {
   const snap = () => db.all(`SELECT uid, natural_key, attrs, raw, issues, source_import_id, year_built FROM objects WHERE category = 'mkd' AND deleted_at IS NULL ORDER BY id`)
     .map((o) => ({ ...o, attrs: JSON.parse(o.attrs) }));
   const before = snap();
-  const r = await importAll(findSrc('karta-zhilogo-fonda')!);
+  const r = await importAll(findSrc('karta-zhilogo-fonda-atyrau.html')!);
   assert.deepEqual(r.map((x) => [x.sheet, x.profile, x.summary.total, x.summary.new, x.summary.changed, x.summary.unchanged, x.summary.invalid, x.summary.missing]),
     [['HOUSES', 'mkd_geo', 1239, 0, 1187, 52, 0, 0]], 'лист NOLIFT не импортируется автоматически');
   assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), 1239);
@@ -334,14 +334,14 @@ test('карта жилого фонда (HTML): координаты домов
   assert.equal(map.points.filter((p: any) => p.category === 'mkd').length, 1187);
   assert.ok(map.points.some((p: any) => p.category === 'mkd' && p.lifts?.n > 0), 'лифты из реестра лифтов в карточке дома на карте');
   // повторная загрузка — без изменений
-  const again = await importAll(findSrc('karta-zhilogo-fonda')!);
+  const again = await importAll(findSrc('karta-zhilogo-fonda-atyrau.html')!);
   assert.equal(again[0].summary.changed, 0);
   const rb = await admin.post(`/admin/imports/${r[0].id}/rollback`);
   assert.equal(rb.status, 200);
   assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND lat IS NOT NULL`), 0, 'откат убирает координаты');
   assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND json_extract(attrs, '$.coord_source') IS NOT NULL`), 0);
   assert.deepEqual(snap().map((o) => { const { coord_source, ...a } = o.attrs; return { ...o, attrs: a }; }), before);
-  await importAll(findSrc('karta-zhilogo-fonda')!);
+  await importAll(findSrc('karta-zhilogo-fonda-atyrau.html')!);
 });
 
 test('карта аварийных домов (HTML): извлечение данных без выполнения скриптов, статусы, координаты, карта, главная панель', { skip: !haveFiles || !findSrc('karta-avariynyh') }, async () => {
@@ -373,4 +373,30 @@ test('карта аварийных домов (HTML): извлечение да
   fd.append('file', new Blob(['<!doctype html><html><body><script>alert(1)</script></body></html>']), 'empty.html');
   const up = await admin.req('POST', '/admin/imports/upload', fd);
   assert.equal(up.status, 400);
+});
+
+test('объединённая карта жилого фонда (HTML с вложенным списком аварийных): координаты МЖД и 89 аварийных/ветхих без дублей', { skip: !haveFiles || !findSrc('karta-zhilogo-fonda-atyrau 1.html') || !findSrc('karta-avariynyh') }, async () => {
+  const names = new Map(db.all(`SELECT natural_key, name FROM objects WHERE category = 'mkd_emergency' AND deleted_at IS NULL`).map((o) => [o.natural_key, o.name]));
+  assert.equal(names.size, 88);
+  const r = await importAll(findSrc('karta-zhilogo-fonda-atyrau 1.html')!);
+  assert.deepEqual(r.map((x) => [x.sheet, x.profile, x.summary.new, x.summary.invalid]), [['HOUSES', 'mkd_geo', 0, 0], ['HOUSES.avar', 'mkd_emergency', 1, 0]]);
+  assert.equal(r[1].summary.total, 89);
+  const st = Object.fromEntries(db.all(`SELECT status, count(*) n FROM objects WHERE category = 'mkd_emergency' AND deleted_at IS NULL GROUP BY status`).map((x) => [x.status, x.n]));
+  assert.deepEqual(st, { 'Аварийный (признан, есть заключение)': 69, 'Ветхий (заключения нет или назначен капремонт)': 20 });
+  // наименования и поля, которых нет во вложенном списке, не затёрты
+  for (const o of db.all(`SELECT natural_key, name, attrs FROM objects WHERE category = 'mkd_emergency' AND deleted_at IS NULL`)) {
+    if (names.has(o.natural_key)) {
+      assert.equal(o.name, names.get(o.natural_key));
+      assert.ok(JSON.parse(o.attrs).address_ru !== null);
+    }
+  }
+  const added = db.get(`SELECT lat, attrs FROM objects WHERE category = 'mkd_emergency' AND address_raw = 'Азаттық 138'`)!;
+  assert.ok(added.lat != null && /Таблица ЖКХ/.test(JSON.parse(added.attrs).coord_source), 'координаты дома из таблицы ЖКХ с указанием источника');
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND deleted_at IS NULL`), 1239);
+  assert.equal(db.scalar(`SELECT count(*) FROM objects WHERE category = 'mkd' AND lat IS NOT NULL`), 1189);
+  // при запуске ничего не отменяется: импорт распознан верно
+  const { repairMisdetectedImports } = await import('../src/import/service.ts');
+  assert.equal(repairMisdetectedImports(), null);
+  const map = (await admin.get('/map')).body;
+  assert.ok(map.points.filter((p: any) => p.category === 'mkd_emergency' && p.mkd_uid).length >= 75, 'аварийные дома привязаны к домам реестра для общей метки');
 });

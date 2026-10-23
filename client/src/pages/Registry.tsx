@@ -157,7 +157,7 @@ export default function Registry() {
                 }
               }}>Экспорт в Excel</Button>
             )}
-            {(category?.code === 'mkd_emergency' || category?.code === 'mkd') && <Button icon={<EnvironmentOutlined />} onClick={() => nav(category.code === 'mkd' ? '/map/housing' : '/map/emergency')}>Показать на карте</Button>}
+            {(category?.code === 'mkd_emergency' || category?.code === 'mkd') && <Button icon={<EnvironmentOutlined />} onClick={() => nav(category.code === 'mkd' ? '/map' : '/map?av=any')}>Показать на карте</Button>}
             {can('objects.edit') && category && <Button type="primary" icon={<PlusOutlined />} onClick={() => nav(`/objects/new?category=${category.code}`)}>Добавить объект</Button>}
           </>
         }

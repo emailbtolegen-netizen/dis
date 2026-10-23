@@ -153,8 +153,15 @@ exploreRouter.get('/map', (req, res) => {
       lifts.set(r.uid, s);
     }
   }
+  // аварийный/ветхий дом → дом реестра МЖД (привязка по адресу, не отклонённая), чтобы показать их одной меткой
+  const emergencyOf = new Map<string, string>();
+  for (const r of all(`SELECT f.uid e, t.uid m FROM object_links k JOIN objects f ON f.id = k.from_id JOIN objects t ON t.id = k.to_id
+                        WHERE k.relation = 'emergency_building' AND k.status != 'rejected' AND f.deleted_at IS NULL AND t.deleted_at IS NULL ORDER BY k.status = 'confirmed' DESC, k.id`)) {
+    if (!emergencyOf.has(r.e)) emergencyOf.set(r.e, r.m);
+  }
   for (const p of points) {
     if (lifts.has(p.uid)) p.lifts = lifts.get(p.uid);
+    if (emergencyOf.has(p.uid)) p.mkd_uid = emergencyOf.get(p.uid);
     const attrs = JSON.parse(p.attrs || '{}');
     const cat = cats.get(p.category);
     if (!conf) for (const f of cat?.fields ?? []) if (f.confidential) delete attrs[f.key];
